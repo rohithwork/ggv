@@ -10,7 +10,7 @@ class Database:
         load_dotenv()
         self.database_url = os.getenv('DATABASE_URL')
 
-        # Ensure SSL mode is enabled for Supabase
+        # Ensure SSL is used for connection
         self.conn = psycopg2.connect(self.database_url, sslmode="require")
         self.init_db()
     
