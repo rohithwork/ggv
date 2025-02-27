@@ -1,109 +1,152 @@
-import os
-import uuid
-import time
-import psycopg2
-import psycopg2.pool
+import sqlite3
 import hashlib
+import uuid
 from datetime import datetime
-from dotenv import load_dotenv
-
 
 class Database:
-    """Database class for managing user authentication and API keys with connection pooling."""
-
-    def __init__(self):
-        """Initializes the database connection pool."""
-        load_dotenv()
-        self.database_url = os.getenv("DATABASE_URL")
-
-        if not self.database_url:
-            raise ValueError("DATABASE_URL not found in environment variables")
-
-        # Create a connection pool (1 min connection, 10 max)
-        self.pool = psycopg2.pool.SimpleConnectionPool(
-            1, 10, self.database_url, sslmode="require"
+    def __init__(self, db_path='chatbot_database.db'):
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.init_db()
+    
+    def init_db(self):
+        c = self.conn.cursor()
+        
+        # Create users table with API key field
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            api_key TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP
         )
-
-    def get_connection(self):
-        """Gets a connection from the pool, reconnecting if necessary."""
-        try:
-            return self.pool.getconn()
-        except psycopg2.Error:
-            print("⚠️ Database connection lost. Trying to reconnect...")
-            self.pool = psycopg2.pool.SimpleConnectionPool(
-                1, 10, self.database_url, sslmode="require"
-            )
-            return self.pool.getconn()
-
-    def release_connection(self, conn):
-        """Releases a connection back to the pool."""
-        if conn:
-            self.pool.putconn(conn)
-
-    def get_cursor(self):
-        """Returns a database cursor, ensuring connection stability."""
-        conn = self.get_connection()
-        return conn.cursor(), conn  # Return both cursor and connection
-
-    def execute_query(self, query, params=None, retries=3):
-        """Executes a query with automatic reconnection and retries."""
-        for attempt in range(retries):
-            conn = None
-            try:
-                conn = self.get_connection()
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-                conn.commit()
-
-                # Fetch results if it's a SELECT query
-                if query.strip().lower().startswith("select"):
-                    return cursor.fetchall()
-                return True
-            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
-                print(f"⚠️ Database error: {e}. Retrying ({attempt + 1}/{retries})...")
-                time.sleep(2)  # Wait before retrying
-            finally:
-                if conn:
-                    self.release_connection(conn)
-        return None  # If all retries fail
-
+        ''')
+        
+        # Create conversations table
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS conversations (
+            conversation_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )
+        ''')
+        
+        # Create messages table
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            message_id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            is_user BOOLEAN NOT NULL,
+            content TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id),
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )
+        ''')
+        
+        self.conn.commit()
+    
+    def close(self):
+        self.conn.close()
+    
+    # User authentication functions
     def hash_password(self, password):
-        """Hashes a password using SHA-256."""
         return hashlib.sha256(password.encode()).hexdigest()
-
+    
     def register_user(self, username, password, email, api_key):
-        """Registers a new user."""
-        user_id = str(uuid.uuid4())
-        password_hash = self.hash_password(password)
-        created_at = datetime.now()
-
-        query = """
-        INSERT INTO users (user_id, username, password_hash, email, api_key, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """
-        params = (user_id, username, password_hash, email, api_key, created_at)
-
-        result = self.execute_query(query, params)
-        return (True, user_id) if result else (False, "Username or email already exists")
-
-    def authenticate_user(self, username, password):
-        """Authenticates a user by checking the username and password hash."""
-        query = "SELECT user_id, password_hash FROM users WHERE username = %s"
-        params = (username,)
-
-        result = self.execute_query(query, params)
-        if not result:
-            return False, "User not found"
-
-        user_id, stored_hash = result[0]
-        if self.hash_password(password) == stored_hash:
+        try:
+            user_id = str(uuid.uuid4())
+            password_hash = self.hash_password(password)
+            c = self.conn.cursor()
+            c.execute(
+                "INSERT INTO users (user_id, username, password_hash, email, api_key, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, username, password_hash, email, api_key, datetime.now())
+            )
+            self.conn.commit()
             return True, user_id
-        return False, "Invalid credentials"
-
-    def get_api_key(self, user_id):
-        """Retrieves the API key for a given user ID."""
-        query = "SELECT api_key FROM users WHERE user_id = %s"
-        params = (user_id,)
-
-        result = self.execute_query(query, params)
-        return result[0][0] if result else None
+        except sqlite3.IntegrityError:
+            return False, "Username or email already exists"
+    
+    def login_user(self, username, password):
+        c = self.conn.cursor()
+        c.execute("SELECT user_id, password_hash FROM users WHERE username = ?", (username,))
+        result = c.fetchone()
+        
+        if result and result[1] == self.hash_password(password):
+            # Update last login time
+            c.execute("UPDATE users SET last_login = ? WHERE user_id = ?", (datetime.now(), result[0]))
+            self.conn.commit()
+            return True, result[0]
+        return False, "Invalid username or password"
+    
+    def get_user_api_key(self, user_id):
+        c = self.conn.cursor()
+        c.execute("SELECT api_key FROM users WHERE user_id = ?", (user_id,))
+        result = c.fetchone()
+        if result:
+            return result[0]
+        return None
+    
+    # Conversation management functions
+    def create_conversation(self, user_id, title):
+        conversation_id = str(uuid.uuid4())
+        c = self.conn.cursor()
+        c.execute(
+            "INSERT INTO conversations (conversation_id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (conversation_id, user_id, title, datetime.now(), datetime.now())
+        )
+        self.conn.commit()
+        return conversation_id
+    
+    def get_user_conversations(self, user_id):
+        c = self.conn.cursor()
+        c.execute(
+            "SELECT conversation_id, title, created_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
+            (user_id,)
+        )
+        return c.fetchall()
+    
+    def get_conversation_messages(self, conversation_id):
+        c = self.conn.cursor()
+        c.execute(
+            "SELECT message_id, is_user, content, timestamp FROM messages WHERE conversation_id = ? ORDER BY timestamp",
+            (conversation_id,)
+        )
+        return c.fetchall()
+    
+    def add_message(self, conversation_id, user_id, is_user, content):
+        message_id = str(uuid.uuid4())
+        c = self.conn.cursor()
+        c.execute(
+            "INSERT INTO messages (message_id, conversation_id, user_id, is_user, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            (message_id, conversation_id, user_id, is_user, content, datetime.now())
+        )
+        # Update conversation's updated_at timestamp
+        c.execute(
+            "UPDATE conversations SET updated_at = ? WHERE conversation_id = ?",
+            (datetime.now(), conversation_id)
+        )
+        self.conn.commit()
+        return message_id
+    
+    def rename_conversation(self, conversation_id, new_title):
+        c = self.conn.cursor()
+        c.execute(
+            "UPDATE conversations SET title = ?, updated_at = ? WHERE conversation_id = ?",
+            (new_title, datetime.now(), conversation_id)
+        )
+        self.conn.commit()
+    
+    def delete_conversation(self, conversation_id):
+        c = self.conn.cursor()
+        # First delete all messages in the conversation
+        c.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+        # Then delete the conversation
+        c.execute("DELETE FROM conversations WHERE conversation_id = ?", (conversation_id,))
+        self.conn.commit()
