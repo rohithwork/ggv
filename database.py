@@ -8,11 +8,15 @@ from dotenv import load_dotenv
 class Database:
     def __init__(self):
         load_dotenv()
-        self.database_url = os.getenv('DATABASE_URL')
+        self.database_url = os.getenv("DATABASE_URL")
 
-        # Ensure SSL is used for connection
-        self.conn = psycopg2.connect(self.database_url, sslmode="require")
-        self.init_db()
+        try:
+            self.conn = psycopg2.connect(self.database_url, sslmode="require")
+            print("✅ Successfully connected to Neon DB!")
+            self.init_db()
+        except OperationalError as e:
+            print(f"❌ Database connection failed: {e}")
+
     
     def init_db(self):
         c = self.conn.cursor()
