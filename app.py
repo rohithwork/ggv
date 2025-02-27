@@ -3,19 +3,15 @@ import time
 import os
 from datetime import datetime
 import uuid
-from dotenv import load_dotenv
 
 # Import custom modules
 from database import Database
 from rag_system import RAGSystem
 
-# Load environment variables
-load_dotenv()
-
 # Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
-        st.image("assests/company_logo.png", width=150)  # Fixed typo in folder name
+        st.image("assests\company_logo.png", width=150)
         st.title("Golden Gate Ventures")
         st.markdown("Internal Knowledge Assistant")
         
@@ -48,6 +44,7 @@ def create_sidebar():
         else:
             st.info("Please login or register to continue.")
 
+# Also modify this function
 def load_conversation_messages():
     if st.session_state.get("current_conversation_id"):
         # Get ALL messages for this conversation
@@ -188,49 +185,43 @@ def display_chat_interface():
         chat_history = [(msg[0], msg[1], msg[2], msg[3]) for msg in st.session_state.chat_history]
         
         # Get response from RAG system
-        try:
-            stream, sources = st.session_state.rag_system.generate_response_stream(prompt, chat_history)
+        stream, sources = st.session_state.rag_system.generate_response_stream(prompt, chat_history)
+        
+        # Display assistant response
+        with st.chat_message("assistant"):
+            response_placeholder = st.empty()
+            full_response = ""
             
-            # Display assistant response
-            with st.chat_message("assistant"):
-                response_placeholder = st.empty()
-                full_response = ""
+            # Stream the response
+            for event in stream:
+                if hasattr(event, "type") and event.type == "content-delta":
+                    delta_text = event.delta.message.content.text
+                    full_response += delta_text
+                    # Update the response in real-time
+                    response_placeholder.markdown(full_response + "▌")
+                    time.sleep(0.01)  # Small delay for smoother streaming
                 
-                # Stream the response
-                for event in stream:
-                    if hasattr(event, "type") and event.type == "content-delta":
-                        delta_text = event.delta.message.content.text
-                        full_response += delta_text
-                        # Update the response in real-time
-                        response_placeholder.markdown(full_response + "▌")
-                        time.sleep(0.01)  # Small delay for smoother streaming
-                    
-                    # Handle end of stream
-                    if hasattr(event, "type") and event.type == "message-end":
-                        # Show final response without cursor
-                        response_placeholder.markdown(full_response)
-                
-                # Save assistant response to database and session state
-                st.session_state.db.add_message(
-                    st.session_state.current_conversation_id,
-                    st.session_state.user_id,
-                    False,  # is_user
-                    full_response
-                )
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-        except Exception as e:
-            error_message = f"An error occurred: {str(e)}"
-            with st.chat_message("assistant"):
-                st.error(error_message)
+                # Handle end of stream
+                if hasattr(event, "type") and event.type == "message-end":
+                    # Show final response without cursor
+                    response_placeholder.markdown(full_response)
             
-            # Save error message to database
+            # Save assistant response to database and session state
             st.session_state.db.add_message(
                 st.session_state.current_conversation_id,
                 st.session_state.user_id,
                 False,  # is_user
-                error_message
+                full_response
             )
-            st.session_state.messages.append({"role": "assistant", "content": error_message})
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+        
+        # Update the UI messages
+        # We're not limiting what's shown to the user, show the full conversation
+        if "chat_messages" not in st.session_state:
+            st.session_state.chat_messages = []
+            
+        st.session_state.chat_messages.append((str(uuid.uuid4()), True, prompt, datetime.now()))
+        st.session_state.chat_messages.append((str(uuid.uuid4()), False, full_response, datetime.now()))
 
 # Main Streamlit App
 def main():
