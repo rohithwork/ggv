@@ -243,12 +243,7 @@ def main():
     
     # Initialize database connection
     if "db" not in st.session_state:
-        try:
-            st.session_state.db = Database()
-        except Exception as e:
-            st.error(f"Failed to connect to the database: {str(e)}")
-            st.info("Please check your DATABASE_URL in the .env file and ensure the PostgreSQL server is running.")
-            return
+        st.session_state.db = Database()
     
     # Create sidebar
     create_sidebar()
