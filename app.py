@@ -15,7 +15,7 @@ load_dotenv()
 # Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
-        st.image("assets/company_logo.png", width=150)  # Fixed typo in folder name
+        st.image("assests/company_logo.png", width=150)  # Fixed typo in folder name
         st.title("Golden Gate Ventures")
         st.markdown("Internal Knowledge Assistant")
         
