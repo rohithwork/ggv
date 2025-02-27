@@ -2,3 +2,5 @@ streamlit
 faiss-cpu
 cohere
 sentence_transformers
+psycopg2_binary 
+python_dotenv
