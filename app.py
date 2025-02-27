@@ -11,7 +11,7 @@ from rag_system import RAGSystem
 # Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
-        st.image("assests\company_logo.png", width=150)
+        st.image("assests//company_logo.png", width=150)
         st.title("Golden Gate Ventures")
         st.markdown("Internal Knowledge Assistant")
         
