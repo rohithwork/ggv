@@ -5,21 +5,12 @@ import uuid
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
-
 class Database:
     def __init__(self):
-        # Get database connection string from environment variable
-        # Format: postgresql://username:password@host:port/database
-        self.db_url = os.getenv("DATABASE_URL")
-        self.connect()
+        load_dotenv()
+        self.database_url = os.getenv('DATABASE_URL')
+        self.conn = psycopg2.connect(self.database_url)
         self.init_db()
-    
-    def connect(self):
-        # Connect to the PostgreSQL database
-        self.conn = psycopg2.connect(self.db_url)
-        self.conn.autocommit = False
     
     def init_db(self):
         c = self.conn.cursor()
@@ -66,8 +57,7 @@ class Database:
         self.conn.commit()
     
     def close(self):
-        if self.conn:
-            self.conn.close()
+        self.conn.close()
     
     # User authentication functions
     def hash_password(self, password):
@@ -85,119 +75,82 @@ class Database:
             self.conn.commit()
             return True, user_id
         except psycopg2.IntegrityError:
-            self.conn.rollback()
             return False, "Username or email already exists"
-        except Exception as e:
-            self.conn.rollback()
-            return False, str(e)
     
     def login_user(self, username, password):
-        try:
-            c = self.conn.cursor()
-            c.execute("SELECT user_id, password_hash FROM users WHERE username = %s", (username,))
-            result = c.fetchone()
-            
-            if result and result[1] == self.hash_password(password):
-                # Update last login time
-                c.execute("UPDATE users SET last_login = %s WHERE user_id = %s", (datetime.now(), result[0]))
-                self.conn.commit()
-                return True, result[0]
-            return False, "Invalid username or password"
-        except Exception as e:
-            self.conn.rollback()
-            return False, str(e)
+        c = self.conn.cursor()
+        c.execute("SELECT user_id, password_hash FROM users WHERE username = %s", (username,))
+        result = c.fetchone()
+        
+        if result and result[1] == self.hash_password(password):
+            # Update last login time
+            c.execute("UPDATE users SET last_login = %s WHERE user_id = %s", (datetime.now(), result[0]))
+            self.conn.commit()
+            return True, result[0]
+        return False, "Invalid username or password"
     
     def get_user_api_key(self, user_id):
-        try:
-            c = self.conn.cursor()
-            c.execute("SELECT api_key FROM users WHERE user_id = %s", (user_id,))
-            result = c.fetchone()
-            if result:
-                return result[0]
-            return None
-        except Exception:
-            return None
+        c = self.conn.cursor()
+        c.execute("SELECT api_key FROM users WHERE user_id = %s", (user_id,))
+        result = c.fetchone()
+        if result:
+            return result[0]
+        return None
     
     # Conversation management functions
     def create_conversation(self, user_id, title):
-        try:
-            conversation_id = str(uuid.uuid4())
-            c = self.conn.cursor()
-            c.execute(
-                "INSERT INTO conversations (conversation_id, user_id, title, created_at, updated_at) VALUES (%s, %s, %s, %s, %s)",
-                (conversation_id, user_id, title, datetime.now(), datetime.now())
-            )
-            self.conn.commit()
-            return conversation_id
-        except Exception as e:
-            self.conn.rollback()
-            print(f"Error creating conversation: {e}")
-            return None
+        conversation_id = str(uuid.uuid4())
+        c = self.conn.cursor()
+        c.execute(
+            "INSERT INTO conversations (conversation_id, user_id, title, created_at, updated_at) VALUES (%s, %s, %s, %s, %s)",
+            (conversation_id, user_id, title, datetime.now(), datetime.now())
+        )
+        self.conn.commit()
+        return conversation_id
     
     def get_user_conversations(self, user_id):
-        try:
-            c = self.conn.cursor()
-            c.execute(
-                "SELECT conversation_id, title, created_at FROM conversations WHERE user_id = %s ORDER BY updated_at DESC",
-                (user_id,)
-            )
-            return c.fetchall()
-        except Exception as e:
-            print(f"Error fetching conversations: {e}")
-            return []
+        c = self.conn.cursor()
+        c.execute(
+            "SELECT conversation_id, title, created_at FROM conversations WHERE user_id = %s ORDER BY updated_at DESC",
+            (user_id,)
+        )
+        return c.fetchall()
     
     def get_conversation_messages(self, conversation_id):
-        try:
-            c = self.conn.cursor()
-            c.execute(
-                "SELECT message_id, is_user, content, timestamp FROM messages WHERE conversation_id = %s ORDER BY timestamp",
-                (conversation_id,)
-            )
-            return c.fetchall()
-        except Exception as e:
-            print(f"Error fetching messages: {e}")
-            return []
+        c = self.conn.cursor()
+        c.execute(
+            "SELECT message_id, is_user, content, timestamp FROM messages WHERE conversation_id = %s ORDER BY timestamp",
+            (conversation_id,)
+        )
+        return c.fetchall()
     
     def add_message(self, conversation_id, user_id, is_user, content):
-        try:
-            message_id = str(uuid.uuid4())
-            c = self.conn.cursor()
-            c.execute(
-                "INSERT INTO messages (message_id, conversation_id, user_id, is_user, content, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
-                (message_id, conversation_id, user_id, is_user, content, datetime.now())
-            )
-            # Update conversation's updated_at timestamp
-            c.execute(
-                "UPDATE conversations SET updated_at = %s WHERE conversation_id = %s",
-                (datetime.now(), conversation_id)
-            )
-            self.conn.commit()
-            return message_id
-        except Exception as e:
-            self.conn.rollback()
-            print(f"Error adding message: {e}")
-            return None
+        message_id = str(uuid.uuid4())
+        c = self.conn.cursor()
+        c.execute(
+            "INSERT INTO messages (message_id, conversation_id, user_id, is_user, content, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
+            (message_id, conversation_id, user_id, is_user, content, datetime.now())
+        )
+        # Update conversation's updated_at timestamp
+        c.execute(
+            "UPDATE conversations SET updated_at = %s WHERE conversation_id = %s",
+            (datetime.now(), conversation_id)
+        )
+        self.conn.commit()
+        return message_id
     
     def rename_conversation(self, conversation_id, new_title):
-        try:
-            c = self.conn.cursor()
-            c.execute(
-                "UPDATE conversations SET title = %s, updated_at = %s WHERE conversation_id = %s",
-                (new_title, datetime.now(), conversation_id)
-            )
-            self.conn.commit()
-        except Exception as e:
-            self.conn.rollback()
-            print(f"Error renaming conversation: {e}")
+        c = self.conn.cursor()
+        c.execute(
+            "UPDATE conversations SET title = %s, updated_at = %s WHERE conversation_id = %s",
+            (new_title, datetime.now(), conversation_id)
+        )
+        self.conn.commit()
     
     def delete_conversation(self, conversation_id):
-        try:
-            c = self.conn.cursor()
-            # First delete all messages in the conversation
-            c.execute("DELETE FROM messages WHERE conversation_id = %s", (conversation_id,))
-            # Then delete the conversation
-            c.execute("DELETE FROM conversations WHERE conversation_id = %s", (conversation_id,))
-            self.conn.commit()
-        except Exception as e:
-            self.conn.rollback()
-            print(f"Error deleting conversation: {e}")
+        c = self.conn.cursor()
+        # First delete all messages in the conversation
+        c.execute("DELETE FROM messages WHERE conversation_id = %s", (conversation_id,))
+        # Then delete the conversation
+        c.execute("DELETE FROM conversations WHERE conversation_id = %s", (conversation_id,))
+        self.conn.commit()
