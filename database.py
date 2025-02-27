@@ -8,14 +8,14 @@ from dotenv import load_dotenv
 class Database:
     def __init__(self):
         load_dotenv()  # Load environment variables
-        self.database_url = os.getenv("DATABASE_URL")
+        self.database_url = os.getenv("DATABASE_URL")  # Use Supabase URL
         self.connect_db()
 
     def connect_db(self):
-        """Establishes a connection to the PostgreSQL database."""
+        """Establishes a connection to the PostgreSQL database on Supabase."""
         try:
             self.conn = psycopg2.connect(self.database_url, sslmode="require")
-            self.conn.autocommit = True  # Ensure changes are committed automatically
+            self.conn.autocommit = True
         except psycopg2.Error as e:
             print(f"❌ Database connection failed: {e}")
             self.conn = None
@@ -33,12 +33,12 @@ class Database:
         # Create users table
         c.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            user_id UUID PRIMARY KEY,
+            user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
             api_key TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT now(),
             last_login TIMESTAMP
         )
         ''')
@@ -46,11 +46,11 @@ class Database:
         # Create conversations table
         c.execute('''
         CREATE TABLE IF NOT EXISTS conversations (
-            conversation_id UUID PRIMARY KEY,
+            conversation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID NOT NULL,
             title TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT now(),
+            updated_at TIMESTAMP DEFAULT now(),
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         )
         ''')
@@ -58,12 +58,12 @@ class Database:
         # Create messages table
         c.execute('''
         CREATE TABLE IF NOT EXISTS messages (
-            message_id UUID PRIMARY KEY,
+            message_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             conversation_id UUID NOT NULL,
             user_id UUID NOT NULL,
             is_user BOOLEAN NOT NULL,
             content TEXT NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            timestamp TIMESTAMP DEFAULT now(),
             FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         )
@@ -85,8 +85,8 @@ class Database:
             password_hash = self.hash_password(password)
             c = self.get_cursor()
             c.execute(
-                "INSERT INTO users (user_id, username, password_hash, email, api_key, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                (user_id, username, password_hash, email, api_key, datetime.now())
+                "INSERT INTO users (user_id, username, password_hash, email, api_key, created_at) VALUES (%s, %s, %s, %s, %s, now())",
+                (user_id, username, password_hash, email, api_key)
             )
             return True, user_id
         except psycopg2.IntegrityError:
@@ -100,16 +100,11 @@ class Database:
 
         if result and result[1] == self.hash_password(password):
             user_id = result[0]
-            # Check if user exists
-            c.execute("SELECT COUNT(*) FROM users WHERE user_id = %s", (user_id,))
-            count = c.fetchone()[0]
-            
-            if count > 0:
-                c.execute(
-                    "UPDATE users SET last_login = %s WHERE user_id = %s",
-                    (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), user_id)
-                )
-                return True, user_id
+            c.execute(
+                "UPDATE users SET last_login = now() WHERE user_id = %s",
+                (user_id,)
+            )
+            return True, user_id
 
         return False, "Invalid username or password"
 
@@ -126,8 +121,8 @@ class Database:
         conversation_id = str(uuid.uuid4())
         c = self.get_cursor()
         c.execute(
-            "INSERT INTO conversations (conversation_id, user_id, title, created_at, updated_at) VALUES (%s, %s, %s, %s, %s)",
-            (conversation_id, user_id, title, datetime.now(), datetime.now())
+            "INSERT INTO conversations (conversation_id, user_id, title, created_at, updated_at) VALUES (%s, %s, %s, now(), now())",
+            (conversation_id, user_id, title)
         )
         return conversation_id
 
@@ -154,12 +149,12 @@ class Database:
         message_id = str(uuid.uuid4())
         c = self.get_cursor()
         c.execute(
-            "INSERT INTO messages (message_id, conversation_id, user_id, is_user, content, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
-            (message_id, conversation_id, user_id, is_user, content, datetime.now())
+            "INSERT INTO messages (message_id, conversation_id, user_id, is_user, content, timestamp) VALUES (%s, %s, %s, %s, %s, now())",
+            (message_id, conversation_id, user_id, is_user, content)
         )
         c.execute(
-            "UPDATE conversations SET updated_at = %s WHERE conversation_id = %s",
-            (datetime.now(), conversation_id)
+            "UPDATE conversations SET updated_at = now() WHERE conversation_id = %s",
+            (conversation_id,)
         )
         return message_id
 
@@ -167,8 +162,8 @@ class Database:
         """Renames a conversation."""
         c = self.get_cursor()
         c.execute(
-            "UPDATE conversations SET title = %s, updated_at = %s WHERE conversation_id = %s",
-            (new_title, datetime.now(), conversation_id)
+            "UPDATE conversations SET title = %s, updated_at = now() WHERE conversation_id = %s",
+            (new_title, conversation_id)
         )
 
     def delete_conversation(self, conversation_id):
