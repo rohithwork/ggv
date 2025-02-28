@@ -565,45 +565,61 @@ Create a summary that:
         """
         Generate a descriptive title for a conversation based on its content
         """
-        if not message_content:
+        if not message_content or len(message_content.strip()) < 5:
             return "New Chat"
-        
+    
         try:
-            # Simplify the prompt to get more reliable results
-            prompt = f"""
-            Create a very concise title (2-4 words) for a chat that starts with:
-            {message_content[:300]}
+            # Create a simple, direct prompt for the title generation
+            prompt = f"Generate a short, specific 3-5 word title for a chat about: {message_content[:250]}"
         
-            IMPORTANT: Return ONLY the title text without quotes, explanations, or formatting.
-            """
-        
-            # Use the Cohere API to generate a concise, descriptive title
+            # Use the Cohere API to generate a title
             response = self.co.chat(
                 model="command",
                 message=prompt,
-                temperature=0.2,
-                max_tokens=10
+                temperature=0.3,  # Lower temperature for more consistent results
+                max_tokens=15,    # Limit tokens to enforce brevity
             )
-    
+
             # Extract and clean the title
             if hasattr(response, 'text'):
-                # Clean up the title (remove quotes, extra spaces, etc.)
-                title = response.text.strip().strip('"\'').strip()
+                # Clean up the title
+                title = response.text.strip()
+            
+                # Remove quotes and other unwanted characters
+                title = title.strip('"\'').strip()
             
                 # Remove common prefixes that might appear
-                prefixes = ["Title:", "Chat title:", "Conversation title:"]
+                prefixes = ["Title:", "Chat title:", "Conversation title:", "Topic:"]
                 for prefix in prefixes:
                     if title.lower().startswith(prefix.lower()):
                         title = title[len(prefix):].strip()
-                    
-                # Ensure reasonable length
-                if len(title) > 30:
-                    title = title[:27] + "..."
-                elif not title:
-                    title = "New Chat"
-                
+            
+                # Enforce length constraints
+                if len(title) > 40:
+                    # Find a good breaking point if title is too long
+                    breaking_point = title[:40].rfind(' ')
+                    if breaking_point > 10:  # Make sure we have a reasonable title length
+                        title = title[:breaking_point] + "..."
+                    else:
+                        title = title[:37] + "..."
+            
+                # Fall back if the title is empty or too short
+                if not title or len(title) < 3:
+                    # Extract key topics from the message as a fallback
+                    key_words = [word for word in message_content.split() 
+                                 if len(word) > 3 and word.lower() not in 
+                                 ['what', 'when', 'where', 'which', 'tell', 'about', 'from', 'that', 'this', 'with']]
+                    if key_words:
+                        # Use the first few significant words
+                        title = ' '.join(key_words[:3]).title()
+                    else:
+                        title = "Discussion " + datetime.now().strftime("%b %d")
+            
                 return title
-            return "New Chat"
+        
+            return "Chat " + datetime.now().strftime("%b %d, %H:%M")
+    
         except Exception as e:
             print(f"Error generating chat title: {e}")
-            return "New Chat"
+            # Generate a timestamp-based title as a fallback
+            return "Chat " + datetime.now().strftime("%b %d, %H:%M")
