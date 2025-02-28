@@ -78,12 +78,8 @@ def create_sidebar():
                     
                     with cols[1]:
                         if st.button("🗑️", key=f"del_{conv[0]}", help="Delete conversation"):
-                            # Create a confirmation message
-                            if f"confirm_delete_{conv[0]}" not in st.session_state:
-                                st.session_state[f"confirm_delete_{conv[0]}"] = True
-                                st.warning("Confirm deletion?")
-                                st.button("Yes, delete", key=f"confirm_{conv[0]}", on_click=delete_conversation, args=(conv[0],))
-                                st.button("Cancel", key=f"cancel_{conv[0]}", on_click=cancel_delete, args=(conv[0],))
+                            # Delete conversation immediately without confirmation
+                            delete_conversation(conv[0])
             
             st.markdown("---")
             # User info and logout section
@@ -97,11 +93,6 @@ def create_sidebar():
         else:
             st.info("Please login or register to continue.")
 
-def cancel_delete(conv_id):
-    # Remove the confirmation flag
-    if f"confirm_delete_{conv_id}" in st.session_state:
-        del st.session_state[f"confirm_delete_{conv_id}"]
-
 def delete_conversation(conv_id):
     st.session_state.db.delete_conversation(conv_id)
     # Reset current conversation if we're deleting the active one
@@ -114,9 +105,6 @@ def delete_conversation(conv_id):
         st.session_state.messages = []
         # Start a new chat session
         start_new_chat()
-    # Remove the confirmation flag
-    if f"confirm_delete_{conv_id}" in st.session_state:
-        del st.session_state[f"confirm_delete_{conv_id}"]
     # Force a full rerun to update the sidebar
     st.rerun()
 
