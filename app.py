@@ -101,6 +101,7 @@ def load_conversation_messages():
             content = msg[2]
             role = "user" if is_user else "assistant"
             st.session_state.messages.append({"role": role, "content": content})
+
 def start_new_chat():
     # Create a new conversation with a default title
     default_title = f"New chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -118,11 +119,6 @@ def start_new_chat():
         st.session_state.chat_history = []
         st.session_state.messages = []  # Clear the chat UI messages
         
-        # Set flag to update title with the first message
-        # This is crucial for the title generation to work
-        st.session_state.needs_title_update = True
-        
-        print(f"New chat started. ID: {conversation_id}, Title update flag: {st.session_state.needs_title_update}")
     except Exception as e:
         st.error(f"Failed to start new chat: {e}")
         print(f"Error starting new chat: {e}")
@@ -217,14 +213,14 @@ def display_chat_interface():
     
     # Chat input
     if prompt := st.chat_input("Type your message..."):
-    # Add user message to chat
+        # Add user message to chat
         st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Display user message immediately
+        # Display user message immediately
         with st.chat_message("user"):
             st.markdown(prompt)
     
-    # Save user message to database
+        # Save user message to database
         st.session_state.db.add_message(
             st.session_state.current_conversation_id,
             st.session_state.user_id,
@@ -232,28 +228,6 @@ def display_chat_interface():
             prompt
         )
     
-    # Update title after first message.
-        # Replace the title update section in display_chat_interface() with this:
-
-        # Update title after first message
-        if st.session_state.get("needs_title_update", False) and prompt and st.session_state.get("rag_system"):
-            try:
-                # Generate a title based on the first message
-                new_title = st.session_state.rag_system.generate_chat_title(prompt)
-                # Make sure we got a valid title
-                if new_title and new_title != "New Chat":
-                    # Update the conversation title in the database
-                    st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
-                    # Update the title in session state
-                    st.session_state.conversation_title = new_title
-                    # Force a rerun to update the UI immediately
-                    st.rerun()
-            except Exception as e:
-                print(f"Error updating chat title: {e}")
-            finally:
-                # Reset the flag even if there was an error
-                st.session_state.needs_title_update = False
-        
         # IMPORTANT: Get ALL messages for this conversation
         # Get the complete conversation history from the database
         all_messages = st.session_state.db.get_conversation_messages(st.session_state.current_conversation_id)
