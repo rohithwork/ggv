@@ -563,36 +563,36 @@ Create a summary that:
 
     def generate_chat_title(self, message_content):
         """
-        Generate a descriptive title for a conversation based on its content
+        Generate a descriptive title for a conversation based on its content.
         """
         try:
             # Use the Cohere API to generate a concise, descriptive title
             response = self.co.chat(
                 model="command",
-                message="""
-                Create a very concise title (maximum 4 words) for a chat conversation that starts with this message:
-                "{message_content[:500]}"
-            
-                The title should:
-                - Be 1-4 words total
-                - Capture the main topic or intent
-                - Be specific rather than generic
-                - NOT include phrases like "Chat about" or "Conversation regarding"
-                - Just return the title itself with no other text or formatting
-                """,
+                message=f"""
+Create a very concise title (maximum 4 words) for a chat conversation that starts with this message:
+{message_content[:500]}
+        
+The title should:
+- Be 1-4 words total
+- Capture the main topic or intent
+- Be specific rather than generic
+- NOT include phrases like "Chat about" or "Conversation regarding"
+- Just return the title itself with no other text or formatting
+""",
                 temperature=0.2,
                 max_tokens=10
             )
-        
+
             # Extract the title from the response
             if hasattr(response, 'text'):
-            # Clean up the title (remove quotes, extra spaces, etc.)
+                # Clean up the title (remove quotes, extra spaces, etc.)
                 title = response.text.strip().strip('"\'').strip()
                 # Limit length
                 if len(title) > 30:
                     title = title[:27] + "..."
                 return title if title else "New Chat"
-            return "New Chat"
+        
         except Exception as e:
             print(f"Error generating chat title: {e}")
             return "New Chat"
