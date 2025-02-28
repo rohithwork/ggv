@@ -191,7 +191,7 @@ def display_chat_interface():
             st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
             st.session_state.conversation_title = new_title
             # Update the sidebar without a full rerun
-            st.experimental_rerun()
+            st.rerun()
         except Exception as e:
             st.error(f"Failed to update title: {e}")
     
