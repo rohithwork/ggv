@@ -39,17 +39,22 @@ def get_db_connection():
     # Return database connection with the URL
     return Database(db_url)
 
-# Improved Streamlit UI Components with a modern, world-class look
+# Improved Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
         st.image("assests//company_logo.png", width=150)
+        
+        # Add some spacing for visual appeal
         st.markdown("---")
         st.title("Golden Gate Ventures")
         st.markdown("*Internal Knowledge Assistant*")
         
         if st.session_state.get("authenticated", False):
             st.button("✨ New Chat", on_click=start_new_chat, type="primary", use_container_width=True)
+            
             st.markdown("---")
+            
+            # Display user's conversations with improved UI
             st.subheader("💬 Your Conversations")
             conversations = st.session_state.db.get_user_conversations(st.session_state.user_id)
 
@@ -59,8 +64,11 @@ def create_sidebar():
             for conv in conversations:
                 with st.container():
                     cols = st.columns([4, 1])
+                    # Make button look like a conversation entry
+                    button_label = f"{conv[1]}"
                     # Truncate long conversation titles
-                    button_label = conv[1] if len(conv[1]) <= 25 else conv[1][:22] + "..."
+                    if len(button_label) > 25:
+                        button_label = button_label[:22] + "..."
                     
                     with cols[0]:
                         if st.button(button_label, key=f"conv_{conv[0]}", use_container_width=True):
@@ -70,6 +78,7 @@ def create_sidebar():
                     
                     with cols[1]:
                         if st.button("🗑️", key=f"del_{conv[0]}", help="Delete conversation"):
+                            # Create a confirmation message
                             if f"confirm_delete_{conv[0]}" not in st.session_state:
                                 st.session_state[f"confirm_delete_{conv[0]}"] = True
                                 st.warning("Confirm deletion?")
@@ -77,8 +86,10 @@ def create_sidebar():
                                 st.button("Cancel", key=f"cancel_{conv[0]}", on_click=cancel_delete, args=(conv[0],))
             
             st.markdown("---")
+            # User info and logout section
             if "username" in st.session_state:
                 st.caption(f"Logged in as: **{st.session_state.username}**")
+            
             if st.button("🚪 Logout", type="secondary", use_container_width=True):
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
@@ -87,55 +98,78 @@ def create_sidebar():
             st.info("Please login or register to continue.")
 
 def cancel_delete(conv_id):
+    # Remove the confirmation flag
     if f"confirm_delete_{conv_id}" in st.session_state:
         del st.session_state[f"confirm_delete_{conv_id}"]
 
 def delete_conversation(conv_id):
     st.session_state.db.delete_conversation(conv_id)
+    # Reset current conversation if we're deleting the active one
     if st.session_state.current_conversation_id == conv_id:
+        # Clear conversation-specific session state
         st.session_state.current_conversation_id = None
         st.session_state.conversation_title = None
         st.session_state.chat_messages = []
         st.session_state.chat_history = []
         st.session_state.messages = []
+        # Start a new chat session
         start_new_chat()
+    # Remove the confirmation flag
     if f"confirm_delete_{conv_id}" in st.session_state:
         del st.session_state[f"confirm_delete_{conv_id}"]
+    # Force a full rerun to update the sidebar
     st.rerun()
 
 def load_conversation_messages():
     if st.session_state.get("current_conversation_id"):
+        # Get ALL messages for this conversation
         messages = st.session_state.db.get_conversation_messages(st.session_state.current_conversation_id)
         st.session_state.chat_messages = messages
+        
+        # Use the complete conversation history
         st.session_state.chat_history = messages
+        
+        # Update the messages for the chat UI
         st.session_state.messages = []
         for msg in messages:
-            role = "user" if msg[1] else "assistant"
-            st.session_state.messages.append({"role": role, "content": msg[2]})
+            is_user = msg[1]
+            content = msg[2]
+            role = "user" if is_user else "assistant"
+            st.session_state.messages.append({"role": role, "content": content})
 
 def start_new_chat():
+    # Create a new conversation with a default title
     default_title = f"New chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    
     try:
         conversation_id = st.session_state.db.create_conversation(
             st.session_state.user_id, 
             default_title
         )
+        
+        # Update session state
         st.session_state.current_conversation_id = conversation_id
         st.session_state.conversation_title = default_title
         st.session_state.chat_messages = []
         st.session_state.chat_history = []
-        st.session_state.messages = []
+        st.session_state.messages = []  # Clear the chat UI messages
+        
     except Exception as e:
         st.error(f"Failed to start new chat: {e}")
         print(f"Error starting new chat: {e}")
 
 def display_auth_page():
+    # Create a nice container for the auth form
     with st.container():
+        # Center the form
         col1, col2, col3 = st.columns([1, 2, 1])
+        
         with col2:
             st.markdown("### 🌉 Welcome to Golden Gate Ventures Assistant")
             st.markdown("*Your internal knowledge base companion*")
             st.markdown("---")
+            
+            # Create tabs with improved styling
             tab1, tab2 = st.tabs(["🔑 Login", "📝 Register"])
             
             with tab1:
@@ -143,7 +177,9 @@ def display_auth_page():
                     st.subheader("Login")
                     username = st.text_input("Username", key="login_username")
                     password = st.text_input("Password", type="password", key="login_password")
+                    
                     submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
+                    
                     if submitted:
                         if username and password:
                             success, result = st.session_state.db.login_user(username, password)
@@ -151,9 +187,13 @@ def display_auth_page():
                                 st.session_state.authenticated = True
                                 st.session_state.user_id = result
                                 st.session_state.username = username
+                                
+                                # Get user's API key and initialize RAG system
                                 api_key = st.session_state.db.get_user_api_key(result)
                                 st.session_state.api_key = api_key
                                 st.session_state.rag_system = RAGSystem(api_key)
+                                
+                                # Start with a new chat
                                 start_new_chat()
                                 st.rerun()
                             else:
@@ -169,8 +209,10 @@ def display_auth_page():
                     new_password = st.text_input("Password", type="password", key="reg_password")
                     confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
                     api_key = st.text_input("Cohere API Key", key="reg_api_key", 
-                                             help="Enter your Cohere API key. This will be used for retrieving and generating responses.")
+                                           help="Enter your Cohere API key. This will be used for retrieving and generating responses.")
+                    
                     submitted = st.form_submit_button("Register", type="primary", use_container_width=True)
+                    
                     if submitted:
                         if new_username and new_email and new_password and api_key:
                             if new_password != confirm_password:
@@ -179,6 +221,7 @@ def display_auth_page():
                                 success, result = st.session_state.db.register_user(new_username, new_password, new_email, api_key)
                                 if success:
                                     st.success("Registration successful! Please login.")
+                                    # Switch to the login tab
                                     st.rerun()
                                 else:
                                     st.error(result)
@@ -186,93 +229,140 @@ def display_auth_page():
                             st.warning("Please fill all fields")
 
 def display_chat_interface():
+    # Create a container for the chat header
     with st.container():
         cols = st.columns([3, 1])
+        
         with cols[0]:
+            # Allow user to edit conversation title with a nicer UI
             current_title = st.session_state.get("conversation_title", "New Chat")
             new_title = st.text_input(
                 "💬 Conversation Title", 
                 value=current_title,
-                key=f"title_input_{st.session_state.current_conversation_id}"
+                key=f"title_input_{st.session_state.current_conversation_id}"  # Unique key based on conversation ID
             )
+            
+            # Only update if title has changed and is not empty
             if new_title != current_title and new_title.strip():
                 try:
                     st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
                     st.session_state.conversation_title = new_title
+                    # Update the sidebar without a full rerun
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to update title: {e}")
+    
+    # Add a divider for visual separation
     st.markdown("---")
+    
+    # Chat container with improved styling
     chat_container = st.container()
     
+    # Initialize messages container in session state if not present
     if "messages" not in st.session_state:
         st.session_state.messages = []
+        # Load previous messages into the format expected by st.chat_message
         if "chat_messages" in st.session_state and st.session_state.chat_messages:
             for msg in st.session_state.chat_messages:
-                role = "user" if msg[1] else "assistant"
-                st.session_state.messages.append({"role": role, "content": msg[2]})
+                is_user = msg[1]
+                content = msg[2]
+                role = "user" if is_user else "assistant"
+                st.session_state.messages.append({"role": role, "content": content})
     
+    # Create a scrollable container for messages
     with chat_container:
+        # Apply custom styling to messages
         if not st.session_state.messages:
             st.info("👋 Welcome! Ask me anything about Golden Gate Ventures.")
+        
+        # Display chat messages using Streamlit's chat_message component
         for message in st.session_state.messages:
             with st.chat_message(message["role"], avatar="👤" if message["role"] == "user" else "🤖"):
                 st.markdown(message["content"])
     
+    # Chat input with custom styling
     st.markdown("---")
     prompt = st.chat_input("Type your message...", key="chat_input")
+    
     if prompt:
+        # Add user message to chat
         st.session_state.messages.append({"role": "user", "content": prompt})
+    
+        # Display user message immediately
         with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
+    
+        # Save user message to database
         st.session_state.db.add_message(
             st.session_state.current_conversation_id,
             st.session_state.user_id,
-            True,
+            True,  # is_user
             prompt
         )
+    
+        # IMPORTANT: Get ALL messages for this conversation
+        # Get the complete conversation history from the database
         all_messages = st.session_state.db.get_conversation_messages(st.session_state.current_conversation_id)
         st.session_state.chat_messages = all_messages
-        st.session_state.chat_history = all_messages
+        st.session_state.chat_history = all_messages  # Use the full history
+        
+        # Format the chat history correctly for the RAG system
         chat_history = [(msg[0], msg[1], msg[2], msg[3]) for msg in st.session_state.chat_history]
         
+        # Show typing indicator
         with st.chat_message("assistant", avatar="🤖"):
+            # Add a typing indicator
             typing_placeholder = st.empty()
             typing_placeholder.markdown("*Thinking...*")
+            
+            # Get response from RAG system
             stream, sources = st.session_state.rag_system.generate_response_stream(prompt, chat_history)
+            
+            # Replace typing indicator with actual response
             response_placeholder = typing_placeholder.empty()
             full_response = ""
+            
+            # Stream the response
             for event in stream:
                 if hasattr(event, "type") and event.type == "content-delta":
                     delta_text = event.delta.message.content.text
                     full_response += delta_text
+                    # Update the response in real-time
                     response_placeholder.markdown(full_response + "▌")
-                    time.sleep(0.01)
+                    time.sleep(0.01)  # Small delay for smoother streaming
+                
+                # Handle end of stream
                 if hasattr(event, "type") and event.type == "message-end":
+                    # Show final response without cursor
                     response_placeholder.markdown(full_response)
+                    
+                    # Show sources if available
                     if sources:
                         with st.expander("Sources"):
                             for i, source in enumerate(sources):
                                 st.markdown(f"**Source {i+1}**: {source}")
+            
+            # Save assistant response to database and session state
             st.session_state.db.add_message(
                 st.session_state.current_conversation_id,
                 st.session_state.user_id,
-                False,
+                False,  # is_user
                 full_response
             )
             st.session_state.messages.append({"role": "assistant", "content": full_response})
+        
+        # Update the UI messages
+        # We're not limiting what's shown to the user, show the full conversation
+        if "chat_messages" not in st.session_state:
+            st.session_state.chat_messages = []
+            
         st.session_state.chat_messages.append((str(uuid.uuid4()), True, prompt, datetime.now()))
         st.session_state.chat_messages.append((str(uuid.uuid4()), False, full_response, datetime.now()))
 
+# Add custom CSS for better styling with dark mode compatibility
 def custom_css():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'Roboto', sans-serif;
-    }
-
     /* Main app styling */
     .main {
         background-color: var(--background-color);
@@ -294,19 +384,19 @@ def custom_css():
         box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
     
-    /* User message styling */
+    /* User message styling - works in both light and dark mode */
     .stChatMessageContent[data-testid*="user"] {
         background-color: rgba(53, 130, 220, 0.2);
         border-radius: 15px;
     }
     
-    /* Assistant message styling */
+    /* Assistant message styling - works in both light and dark mode */
     .stChatMessageContent[data-testid*="assistant"] {
         background-color: rgba(240, 242, 246, 0.1);
         border-radius: 15px;
     }
     
-    /* Button styling */
+    /* Improve button styling */
     .stButton button {
         border-radius: 8px;
         font-weight: 500;
@@ -318,7 +408,7 @@ def custom_css():
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     
-    /* Input styling */
+    /* Title input styling - ensure text is visible in dark mode */
     .stTextInput input {
         border-radius: 8px;
         border: 1px solid var(--input-border);
@@ -326,7 +416,7 @@ def custom_css():
         background-color: var(--input-bg) !important;
     }
     
-    /* Form styling */
+    /* Form styling - ensure text is visible in dark mode */
     .stForm {
         background-color: var(--form-bg);
         padding: 20px;
@@ -334,10 +424,12 @@ def custom_css():
         box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
     
+    /* Fix form labels for dark mode */
     .stForm label {
         color: var(--text-color) !important;
     }
     
+    /* CSS variables for theme compatibility */
     :root {
         --text-color: #31333F;
         --background-color: #f9f9f9;
@@ -347,6 +439,7 @@ def custom_css():
         --form-bg: #ffffff;
     }
     
+    /* Dark mode specific variables */
     @media (prefers-color-scheme: dark) {
         :root {
             --text-color: #fafafa;
@@ -358,11 +451,13 @@ def custom_css():
         }
     }
     
+    /* Override Streamlit's dark mode text for inputs */
     [data-theme="dark"] input, 
     [data-theme="dark"] .stTextInput input {
         color: var(--text-color) !important;
     }
     
+    /* Additional fix for form elements in dark mode */
     [data-theme="dark"] .stForm label span,
     [data-theme="dark"] .stTextInput label span,
     [data-theme="dark"] .stTextInput span p,
@@ -371,20 +466,24 @@ def custom_css():
         opacity: 1 !important;
     }
     
+    /* Fix text input placeholder color in dark mode */
     [data-theme="dark"] input::placeholder {
         color: rgba(250, 250, 250, 0.6) !important;
     }
     
+    /* Ensure tab labels are visible in dark mode */
     [data-theme="dark"] .stTabs [data-baseweb="tab-list"] button {
         color: var(--text-color) !important;
     }
     
+    /* Fix expander text color in dark mode */
     [data-theme="dark"] .streamlit-expanderHeader {
         color: var(--text-color) !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
+# Main Streamlit App
 def main():
     st.set_page_config(
         page_title="Golden Gate Ventures Assistant",
@@ -393,19 +492,27 @@ def main():
         initial_sidebar_state="expanded"
     )
     
+    # Apply custom CSS
     custom_css()
     
+    # Initialize database connection
     if "db" not in st.session_state:
         st.session_state.db = get_db_connection()
+        
+        # If no database connection is available yet, show only the database configuration UI
         if st.session_state.db is None:
             st.warning("Please configure your Neon database connection to continue")
             return
     
+    # Create sidebar
     create_sidebar()
     
+    # Main content
     if st.session_state.get("authenticated", False):
         if "current_conversation_id" not in st.session_state:
             start_new_chat()
+        
+        # Display chat interface
         display_chat_interface()
     else:
         display_auth_page()
