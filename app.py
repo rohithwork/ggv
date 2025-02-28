@@ -11,7 +11,7 @@ from rag_system import RAGSystem
 # Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
-        st.image("assests//company_logo.png", width=150)
+        st.image("assests\company_logo.png", width=150)
         st.title("Golden Gate Ventures")
         st.markdown("Internal Knowledge Assistant")
         
@@ -44,7 +44,6 @@ def create_sidebar():
         else:
             st.info("Please login or register to continue.")
 
-# Also modify this function
 def load_conversation_messages():
     if st.session_state.get("current_conversation_id"):
         # Get ALL messages for this conversation
@@ -175,6 +174,17 @@ def display_chat_interface():
             prompt
         )
         
+        # Check if this is the first message and we need to update the title
+        if st.session_state.get("needs_title_update", False):
+            # Generate a title based on the first message
+            new_title = st.session_state.rag_system.generate_chat_title(prompt)
+            # Update the conversation title in the database
+            st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
+            # Update the session state
+            st.session_state.conversation_title = new_title
+            # Set flag to false so we don't update the title again
+            st.session_state.needs_title_update = False
+        
         # IMPORTANT: Get ALL messages for this conversation
         # Get the complete conversation history from the database
         all_messages = st.session_state.db.get_conversation_messages(st.session_state.current_conversation_id)
@@ -222,6 +232,9 @@ def display_chat_interface():
             
         st.session_state.chat_messages.append((str(uuid.uuid4()), True, prompt, datetime.now()))
         st.session_state.chat_messages.append((str(uuid.uuid4()), False, full_response, datetime.now()))
+        
+        # After updating the chat, rerun to refresh the sidebar with the new title
+        st.rerun()
 
 # Main Streamlit App
 def main():
