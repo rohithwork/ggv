@@ -49,10 +49,11 @@ def create_sidebar():
         if st.session_state.get("authenticated", False):
             st.button("New Chat", on_click=start_new_chat)
             
+            # Display user's conversation.
             # Display user's conversations
             st.subheader("Your Conversations")
             conversations = st.session_state.db.get_user_conversations(st.session_state.user_id)
-            
+
             for conv in conversations:
                 col1, col2 = st.columns([4, 1])
                 with col1:
@@ -63,8 +64,17 @@ def create_sidebar():
                 with col2:
                     if st.button("🗑️", key=f"del_{conv[0]}"):
                         st.session_state.db.delete_conversation(conv[0])
+                        # Reset current conversation if we're deleting the active one
                         if st.session_state.current_conversation_id == conv[0]:
+                        # Clear conversation-specific session state
+                            st.session_state.current_conversation_id = None
+                            st.session_state.conversation_title = None
+                            st.session_state.chat_messages = []
+                            st.session_state.chat_history = []
+                            st.session_state.messages = []
+                            # Start a new chat session
                             start_new_chat()
+                            # Force a full rerun to update the sidebar
                         st.rerun()
             
             st.divider()
@@ -190,20 +200,31 @@ def display_chat_interface():
     
     # Chat input
     if prompt := st.chat_input("Type your message..."):
-        # Add user message to chat
+    # Add user message to chat
         st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        # Display user message immediately
+    
+    # Display user message immediately
         with st.chat_message("user"):
             st.markdown(prompt)
-        
-        # Save user message to database
+    
+    # Save user message to database
         st.session_state.db.add_message(
             st.session_state.current_conversation_id,
             st.session_state.user_id,
             True,  # is_user
             prompt
         )
+    
+    # Update title after first message
+        if st.session_state.get("needs_title_update", False) and st.session_state.get("rag_system"):
+            # Generate a title based on the first message
+            new_title = st.session_state.rag_system.generate_chat_title(prompt)
+            # Update the conversation title in the database
+            st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
+            # Update the title in session state
+            st.session_state.conversation_title = new_title
+            # Reset the flag
+            st.session_state.needs_title_update = False
         
         # IMPORTANT: Get ALL messages for this conversation
         # Get the complete conversation history from the database
