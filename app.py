@@ -172,15 +172,22 @@ def display_auth_page():
 
 def display_chat_interface():
     # Allow user to edit conversation title
+    current_title = st.session_state.get("conversation_title", "New Chat")
     new_title = st.text_input(
         "Conversation Title", 
-        value=st.session_state.get("conversation_title", "New Chat"),
-        key="title_input"
+        value=current_title,
+        key=f"title_input_{st.session_state.current_conversation_id}"  # Unique key based on conversation ID
     )
     
-    if new_title != st.session_state.get("conversation_title", ""):
-        st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
-        st.session_state.conversation_title = new_title
+    # Only update if title has changed and is not empty
+    if new_title != current_title and new_title.strip():
+        try:
+            st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
+            st.session_state.conversation_title = new_title
+            # Update the sidebar without a full rerun
+            st.experimental_rerun()
+        except Exception as e:
+            st.error(f"Failed to update title: {e}")
     
     # Initialize messages container in session state if not present
     if "messages" not in st.session_state:
