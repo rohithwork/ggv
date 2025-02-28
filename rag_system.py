@@ -562,9 +562,9 @@ Create a summary that:
                 self.conversation_summary = "Topics discussed: " + " | ".join(user_queries[-5:])
 
     def generate_chat_title(self, message_content):
-    """
-    Generate a descriptive title for a conversation based on its content
-    """
+        """
+        Generate a descriptive title for a conversation based on its content
+        """
         if not message_content:
             return "New Chat"
         
