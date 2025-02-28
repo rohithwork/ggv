@@ -215,16 +215,21 @@ def display_chat_interface():
             prompt
         )
     
-    # Update title after first message
+    # Update title after first message.
+        # Update title after first message
         if st.session_state.get("needs_title_update", False) and st.session_state.get("rag_system"):
+            try:
             # Generate a title based on the first message
-            new_title = st.session_state.rag_system.generate_chat_title(prompt)
+                new_title = st.session_state.rag_system.generate_chat_title(prompt)
             # Update the conversation title in the database
-            st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
+                st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
             # Update the title in session state
-            st.session_state.conversation_title = new_title
-            # Reset the flag
-            st.session_state.needs_title_update = False
+                st.session_state.conversation_title = new_title
+            except Exception as e:
+                print(f"Error updating chat title: {e}")
+            finally:
+                # Reset the flag even if there was an error
+                st.session_state.needs_title_update = False
         
         # IMPORTANT: Get ALL messages for this conversation
         # Get the complete conversation history from the database
