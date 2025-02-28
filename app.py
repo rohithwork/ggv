@@ -101,21 +101,31 @@ def load_conversation_messages():
             content = msg[2]
             role = "user" if is_user else "assistant"
             st.session_state.messages.append({"role": role, "content": content})
-
 def start_new_chat():
     # Create a new conversation with a default title
     default_title = f"New chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    conversation_id = st.session_state.db.create_conversation(
-        st.session_state.user_id, 
-        default_title
-    )
-    st.session_state.current_conversation_id = conversation_id
-    st.session_state.conversation_title = default_title
-    st.session_state.chat_messages = []
-    st.session_state.chat_history = []
-    st.session_state.messages = []  # Clear the chat UI messages
-    # Flag to indicate the title needs to be updated after first message
-    st.session_state.needs_title_update = True
+    
+    try:
+        conversation_id = st.session_state.db.create_conversation(
+            st.session_state.user_id, 
+            default_title
+        )
+        
+        # Update session state
+        st.session_state.current_conversation_id = conversation_id
+        st.session_state.conversation_title = default_title
+        st.session_state.chat_messages = []
+        st.session_state.chat_history = []
+        st.session_state.messages = []  # Clear the chat UI messages
+        
+        # Set flag to update title with the first message
+        # This is crucial for the title generation to work
+        st.session_state.needs_title_update = True
+        
+        print(f"New chat started. ID: {conversation_id}, Title update flag: {st.session_state.needs_title_update}")
+    except Exception as e:
+        st.error(f"Failed to start new chat: {e}")
+        print(f"Error starting new chat: {e}")
 
 def display_auth_page():
     tab1, tab2 = st.tabs(["Login", "Register"])
