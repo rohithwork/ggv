@@ -8,6 +8,11 @@ import uuid
 from database import Database
 from rag_system import RAGSystem
 
+# Initialize database with connection string from environment variable
+@st.cache_resource
+def get_database():
+    return Database(os.environ.get('NEON_CONNECTION_STRING'))
+
 # Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
@@ -247,7 +252,7 @@ def main():
     
     # Initialize database connection
     if "db" not in st.session_state:
-        st.session_state.db = Database()
+        st.session_state.db = get_database()
     
     # Create sidebar
     create_sidebar()
