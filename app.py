@@ -8,15 +8,41 @@ import uuid
 from database import Database
 from rag_system import RAGSystem
 
-# Initialize database with connection string from environment variable
-@st.cache_resource
-def get_database():
-    return Database(os.environ.get('NEON_CONNECTION_STRING'))
+# Configuration for Neon database
+def get_db_connection():
+    # Check for the database URL in session state first (for testing)
+    db_url = st.session_state.get("db_url")
+    
+    # If not in session state, try environment variable
+    if not db_url:
+        db_url = os.environ.get("DATABASE_URL")
+    
+    if not db_url:
+        # If no URL found, allow user to enter it manually
+        with st.sidebar:
+            if "db_config_shown" not in st.session_state:
+                st.session_state.db_config_shown = True
+                st.info("Database configuration needed")
+            
+            db_url = st.text_input("Neon Database URL", 
+                                   key="manual_db_url",
+                                   help="Enter your Neon database connection URL",
+                                   type="password")
+            
+            if db_url and st.button("Connect"):
+                st.session_state.db_url = db_url
+                return Database(db_url)
+        
+        # Return None if no URL is available yet
+        return None
+    
+    # Return database connection with the URL
+    return Database(db_url)
 
 # Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
-        st.image("assests//company_logo.png", width=150)
+        st.image("assests\company_logo.png", width=150)
         st.title("Golden Gate Ventures")
         st.markdown("Internal Knowledge Assistant")
         
@@ -179,17 +205,6 @@ def display_chat_interface():
             prompt
         )
         
-        # Check if this is the first message and we need to update the title
-        if st.session_state.get("needs_title_update", False):
-            # Generate a title based on the first message
-            new_title = st.session_state.rag_system.generate_chat_title(prompt)
-            # Update the conversation title in the database
-            st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
-            # Update the session state
-            st.session_state.conversation_title = new_title
-            # Set flag to false so we don't update the title again
-            st.session_state.needs_title_update = False
-        
         # IMPORTANT: Get ALL messages for this conversation
         # Get the complete conversation history from the database
         all_messages = st.session_state.db.get_conversation_messages(st.session_state.current_conversation_id)
@@ -237,9 +252,6 @@ def display_chat_interface():
             
         st.session_state.chat_messages.append((str(uuid.uuid4()), True, prompt, datetime.now()))
         st.session_state.chat_messages.append((str(uuid.uuid4()), False, full_response, datetime.now()))
-        
-        # After updating the chat, rerun to refresh the sidebar with the new title
-        st.rerun()
 
 # Main Streamlit App
 def main():
@@ -252,7 +264,12 @@ def main():
     
     # Initialize database connection
     if "db" not in st.session_state:
-        st.session_state.db = get_database()
+        st.session_state.db = get_db_connection()
+        
+        # If no database connection is available yet, show only the database configuration UI
+        if st.session_state.db is None:
+            st.warning("Please configure your Neon database connection to continue")
+            return
     
     # Create sidebar
     create_sidebar()
