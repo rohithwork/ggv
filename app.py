@@ -359,18 +359,18 @@ def display_chat_interface():
         st.session_state.chat_messages.append((str(uuid.uuid4()), True, prompt, datetime.now()))
         st.session_state.chat_messages.append((str(uuid.uuid4()), False, full_response, datetime.now()))
 
-# Add custom CSS for better styling
+# Add custom CSS for better styling with dark mode compatibility
 def custom_css():
     st.markdown("""
     <style>
     /* Main app styling */
     .main {
-        background-color: #f9f9f9;
+        background-color: var(--background-color);
     }
     
     /* Sidebar styling */
     .css-1d391kg {
-        background-color: #f0f2f6;
+        background-color: var(--sidebar-bg);
     }
     
     /* Chat container */
@@ -384,15 +384,15 @@ def custom_css():
         box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
     
-    /* User message styling */
+    /* User message styling - works in both light and dark mode */
     .stChatMessageContent[data-testid*="user"] {
-        background-color: #e6f3ff;
+        background-color: rgba(53, 130, 220, 0.2);
         border-radius: 15px;
     }
     
-    /* Assistant message styling */
+    /* Assistant message styling - works in both light and dark mode */
     .stChatMessageContent[data-testid*="assistant"] {
-        background-color: #f8f9fa;
+        background-color: rgba(240, 242, 246, 0.1);
         border-radius: 15px;
     }
     
@@ -408,18 +408,77 @@ def custom_css():
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     
-    /* Title input styling */
+    /* Title input styling - ensure text is visible in dark mode */
     .stTextInput input {
         border-radius: 8px;
-        border: 1px solid #e0e0e0;
+        border: 1px solid var(--input-border);
+        color: var(--text-color) !important;
+        background-color: var(--input-bg) !important;
     }
     
-    /* Form styling */
+    /* Form styling - ensure text is visible in dark mode */
     .stForm {
-        background-color: white;
+        background-color: var(--form-bg);
         padding: 20px;
         border-radius: 15px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    
+    /* Fix form labels for dark mode */
+    .stForm label {
+        color: var(--text-color) !important;
+    }
+    
+    /* CSS variables for theme compatibility */
+    :root {
+        --text-color: #31333F;
+        --background-color: #f9f9f9;
+        --sidebar-bg: #f0f2f6;
+        --input-border: #e0e0e0;
+        --input-bg: #ffffff;
+        --form-bg: #ffffff;
+    }
+    
+    /* Dark mode specific variables */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --text-color: #fafafa;
+            --background-color: #0e1117;
+            --sidebar-bg: #1e1e1e;
+            --input-border: #4a4a4a;
+            --input-bg: #262730;
+            --form-bg: #262730;
+        }
+    }
+    
+    /* Override Streamlit's dark mode text for inputs */
+    [data-theme="dark"] input, 
+    [data-theme="dark"] .stTextInput input {
+        color: var(--text-color) !important;
+    }
+    
+    /* Additional fix for form elements in dark mode */
+    [data-theme="dark"] .stForm label span,
+    [data-theme="dark"] .stTextInput label span,
+    [data-theme="dark"] .stTextInput span p,
+    [data-theme="dark"] .stForm span p {
+        color: var(--text-color) !important;
+        opacity: 1 !important;
+    }
+    
+    /* Fix text input placeholder color in dark mode */
+    [data-theme="dark"] input::placeholder {
+        color: rgba(250, 250, 250, 0.6) !important;
+    }
+    
+    /* Ensure tab labels are visible in dark mode */
+    [data-theme="dark"] .stTabs [data-baseweb="tab-list"] button {
+        color: var(--text-color) !important;
+    }
+    
+    /* Fix expander text color in dark mode */
+    [data-theme="dark"] .streamlit-expanderHeader {
+        color: var(--text-color) !important;
     }
     </style>
     """, unsafe_allow_html=True)
