@@ -569,7 +569,7 @@ Create a summary that:
             # Use the Cohere API to generate a concise, descriptive title
             response = self.co.chat(
                 model="command",
-                message=f"""
+                message="""
                 Create a very concise title (maximum 4 words) for a chat conversation that starts with this message:
                 "{message_content[:500]}"
             
