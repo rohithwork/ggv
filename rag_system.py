@@ -562,37 +562,48 @@ Create a summary that:
                 self.conversation_summary = "Topics discussed: " + " | ".join(user_queries[-5:])
 
     def generate_chat_title(self, message_content):
-        """
-        Generate a descriptive title for a conversation based on its content.
-        """
+    """
+    Generate a descriptive title for a conversation based on its content
+    """
+        if not message_content:
+            return "New Chat"
+        
         try:
+            # Simplify the prompt to get more reliable results
+            prompt = f"""
+            Create a very concise title (2-4 words) for a chat that starts with:
+            {message_content[:300]}
+        
+            IMPORTANT: Return ONLY the title text without quotes, explanations, or formatting.
+            """
+        
             # Use the Cohere API to generate a concise, descriptive title
             response = self.co.chat(
                 model="command",
-                message=f"""
-Create a very concise title (maximum 4 words) for a chat conversation that starts with this message:
-{message_content[:500]}
-        
-The title should:
-- Be 1-4 words total
-- Capture the main topic or intent
-- Be specific rather than generic
-- NOT include phrases like "Chat about" or "Conversation regarding"
-- Just return the title itself with no other text or formatting
-""",
+                message=prompt,
                 temperature=0.2,
                 max_tokens=10
             )
-
-            # Extract the title from the response
+    
+            # Extract and clean the title
             if hasattr(response, 'text'):
                 # Clean up the title (remove quotes, extra spaces, etc.)
                 title = response.text.strip().strip('"\'').strip()
-                # Limit length
+            
+                # Remove common prefixes that might appear
+                prefixes = ["Title:", "Chat title:", "Conversation title:"]
+                for prefix in prefixes:
+                    if title.lower().startswith(prefix.lower()):
+                        title = title[len(prefix):].strip()
+                    
+                # Ensure reasonable length
                 if len(title) > 30:
                     title = title[:27] + "..."
-                return title if title else "New Chat"
-        
+                elif not title:
+                    title = "New Chat"
+                
+                return title
+            return "New Chat"
         except Exception as e:
             print(f"Error generating chat title: {e}")
             return "New Chat"
