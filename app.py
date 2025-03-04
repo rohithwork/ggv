@@ -87,8 +87,11 @@ def select_pinecone_index():
         
         # Add a disconnect button
         if st.button("Disconnect from Index", type="secondary"):
+            # Clear only Pinecone-related session state
             del st.session_state.pinecone_index_name
-            del st.session_state.rag_system
+            # Keep RAG system if other components are still valid
+            if "rag_system" in st.session_state:
+                del st.session_state.rag_system
             st.success("Disconnected from Pinecone index.")
             st.rerun()
         return
@@ -117,6 +120,7 @@ def select_pinecone_index():
     selected_index = st.selectbox("Select an Index", index_list)
     
     if st.button("Connect to Index", type="primary"):
+        # Persist the Pinecone index name in session state
         st.session_state.pinecone_index_name = selected_index
         st.success(f"Connected to Pinecone index: {selected_index}")
         
@@ -128,8 +132,9 @@ def select_pinecone_index():
             pinecone_environment="us-east-1",  # Replace with your Pinecone environment
             index_name=selected_index
         )
+        
+        # Stay on the same page after connecting
         st.rerun()
-
 # Configuration for Neon database
 def get_db_connection():
     # Check for the database URL in session state first (for testing)
