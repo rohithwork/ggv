@@ -433,7 +433,7 @@ def display_admin_page():
                     st.error(message)
     
     # Knowledge Base Management Tab
-    with admin_tabs[
+    with admin_tabs[2}:
         st.subheader("Manage Knowledge Base")
 
         # Pinecone API Key Input
