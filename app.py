@@ -545,6 +545,11 @@ def display_chat_interface():
         select_pinecone_index()
         return
     
+    # Ensure the RAGSystem object is initialized
+    if "rag_system" not in st.session_state:
+        st.error("RAGSystem is not initialized. Please reconnect to a Pinecone index.")
+        return
+    
     # Rest of the chat interface remains unchanged
     with st.container():
         cols = st.columns([3, 1])
@@ -642,7 +647,6 @@ def display_chat_interface():
         
         st.session_state.chat_messages.append((str(uuid.uuid4()), True, prompt, datetime.now()))
         st.session_state.chat_messages.append((str(uuid.uuid4()), False, full_response, datetime.now()))
-# Add custom CSS for better styling with dark mode compatibility
 def custom_css():
     st.markdown("""
     <style>
