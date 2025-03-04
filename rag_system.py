@@ -4,6 +4,8 @@ import numpy as np
 import faiss
 import cohere
 from sentence_transformers import SentenceTransformer
+import pinecone
+from pinecone import ServerlessSpec, Pinecone 
 
 class RAGSystem:
     def __init__(self, api_key, pinecone_api_key, pinecone_environment, index_name):
