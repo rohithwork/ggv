@@ -99,15 +99,16 @@ def select_pinecone_index():
         st.session_state.pinecone_index_name = selected_index
         st.success(f"Connected to Pinecone index: {selected_index}")
         
-        # Reinitialize RAGSystem with the selected index
+        # Initialize RAGSystem with the selected index
         user_details = st.session_state.db.get_user_details(st.session_state.user_id)
         st.session_state.rag_system = RAGSystem(
             api_key=user_details["api_key"],
             pinecone_api_key=pinecone_api_key,
-            pinecone_environment="us-east-1",
+            pinecone_environment="us-east-1",  # Replace with your Pinecone environment
             index_name=selected_index
         )
         st.rerun()
+
 # Configuration for Neon database
 def get_db_connection():
     # Check for the database URL in session state first (for testing)
@@ -282,9 +283,8 @@ def start_new_chat():
 
 # Modified display_auth_page() function
 def display_auth_page():
-    # Create a nice container for the auth form
+    """Display the login page"""
     with st.container():
-        # Center the form
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
@@ -298,7 +298,6 @@ def display_auth_page():
                 email = st.text_input("Email", key="login_email")
                 is_admin_login = st.checkbox("I am an admin", key="is_admin_login")
                 
-                # Only show password field if admin is selected
                 password = None
                 if is_admin_login:
                     password = st.text_input("Password", type="password", key="login_password")
@@ -311,9 +310,8 @@ def display_auth_page():
                     elif is_admin_login and not password:
                         st.warning("Admin login requires a password")
                     else:
-                        # For non-admin users, use a simplified login without password
                         if not is_admin_login:
-                            # Check if user exists (no password check for non-admins)
+                            # Non-admin login (no password required)
                             success, result = st.session_state.db.login_user_without_password(email)
                             if not success:
                                 st.error(result)
@@ -326,13 +324,7 @@ def display_auth_page():
                                 st.session_state.is_admin = False
                                 st.session_state.email = email
                                 
-                                # Get user details
-                                user_details = st.session_state.db.get_user_details(result["user_id"])
-                                st.session_state.api_key = user_details["api_key"]
-                                st.session_state.rag_system = RAGSystem(user_details["api_key"])
-                                
-                                # Start with a new chat
-                                start_new_chat()
+                                # Redirect to index selection
                                 st.rerun()
                         else:
                             # Admin login with password verification
@@ -346,21 +338,11 @@ def display_auth_page():
                                     st.session_state.is_admin = result["is_admin"]
                                     st.session_state.email = email
                                     
-                                    # Get user details
-                                    user_details = st.session_state.db.get_user_details(result["user_id"])
-                                    st.session_state.api_key = user_details["api_key"]
-                                    st.session_state.rag_system = RAGSystem(user_details["api_key"])
-                                    
-                                    # Initialize admin view state
-                                    st.session_state.admin_view = False  # Start with chat view
-                                    
-                                    # Start with a new chat
-                                    start_new_chat()
+                                    # Redirect to index selection
                                     st.rerun()
                             else:
                                 st.error(result)
             
-            # Information for new users
             st.info("If you don't have an account, please contact an administrator.")
 
 def display_admin_page():
@@ -546,8 +528,10 @@ def display_admin_page():
                                 st.rerun()
         except Exception as e:
             st.error(f"Error loading conversations: {str(e)}")
+# Updated display_chat_interface() function
 def display_chat_interface():
-    # Allow users to select a Pinecone index if not already selected
+    """Display the chat interface"""
+    # Ensure the user has selected a Pinecone index
     if "pinecone_index_name" not in st.session_state:
         select_pinecone_index()
         return
@@ -574,7 +558,6 @@ def display_chat_interface():
     
     st.markdown("---")
     
-    # Chat container with improved styling
     chat_container = st.container()
     
     if "messages" not in st.session_state:
