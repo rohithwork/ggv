@@ -15,7 +15,11 @@ from embedding import generate_and_store_embeddings
 
 import re
 
-def initialize_pinecone(api_key, environment, index_name, dimension=768):
+import re
+import pinecone
+import streamlit as st
+
+def initialize_pinecone(api_key, environment, index_name, dimension=384):
     try:
         # Validate the index name using a regular expression
         if not re.match(r'^[a-z0-9\-]+$', index_name):
@@ -26,8 +30,31 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
         pc = Pinecone(api_key=api_key)
         
         # Check if the index exists
-        if index_name in pc.list_indexes():
-            st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
+        if index_name in pinecone.list_indexes():
+            st.info(f"Pinecone index '{index_name}' already exists.")
+            
+            # Ask the user what to do
+            action = st.selectbox(
+                "What would you like to do?",
+                ["Use Existing Index", "Delete and Create New Index"],
+                key="index_action"
+            )
+            
+            if action == "Delete and Create New Index":
+                # Delete the existing index
+                pc.delete_index(index_name)
+                st.success(f"Deleted existing Pinecone index '{index_name}'.")
+                
+                # Create a new index
+                pc.create_index(
+                    name=index_name,
+                    dimension=dimension,  # Adjust based on your embedding model
+                    metric='cosine',
+                    spec=ServerlessSpec(cloud='aws', region=environment)
+                )
+                st.success(f"Created new Pinecone index '{index_name}'.")
+            else:
+                st.info(f"Using existing Pinecone index '{index_name}'.")
         else:
             # Create the index if it doesn't exist
             pc.create_index(
@@ -41,11 +68,11 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
         # Return the Pinecone index object
         return pc.Index(index_name)
     
-    except pinecone.core.client.exceptions.ApiException as e:
-        if e.status == 409:  # Index already exists
+    except pinecone.exceptions.ApiException as e:
+        if e.status_code == 409:  # Index already exists
             st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
             return pinecone.Index(index_name)
-        elif e.status == 400:  # Invalid argument (e.g., invalid index name)
+        elif e.status_code == 400:  # Invalid argument (e.g., invalid index name)
             st.error("Error: Invalid index name. Ensure it consists of lowercase alphanumeric characters or hyphens (-).")
         else:
             st.error(f"Error initializing Pinecone: {str(e)}")
