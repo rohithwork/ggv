@@ -78,8 +78,20 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
         return None
 
 def select_pinecone_index():
-    """Allow users to select a Pinecone index from available options"""
-    st.subheader("Select Pinecone Index")
+    """Allow users to select or disconnect from a Pinecone index"""
+    st.subheader("Pinecone Index Management")
+    
+    # Check if an index is already connected
+    if "pinecone_index_name" in st.session_state:
+        st.success(f"Connected to Pinecone index: {st.session_state.pinecone_index_name}")
+        
+        # Add a disconnect button
+        if st.button("Disconnect from Index", type="secondary"):
+            del st.session_state.pinecone_index_name
+            del st.session_state.rag_system
+            st.success("Disconnected from Pinecone index.")
+            st.rerun()
+        return
     
     # Get the user's Pinecone API key from the database
     pinecone_api_key = st.session_state.db.get_pinecone_api_key(st.session_state.user_id)
@@ -540,12 +552,12 @@ def display_admin_page():
 # Updated display_chat_interface() function
 def display_chat_interface():
     """Display the chat interface"""
-    # Check if a Pinecone index is selected
+    # Check if an index has been selected
     if "pinecone_index_name" not in st.session_state:
-        st.warning("Please select a Pinecone index to continue chatting.")
+        st.warning("Please select a Pinecone index to proceed.")
         select_pinecone_index()
         return
-
+    
     # Rest of the chat interface remains unchanged
     with st.container():
         cols = st.columns([3, 1])
