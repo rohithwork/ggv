@@ -68,16 +68,6 @@ def initialize_pinecone(api_key, environment, index_name, dimension=384):
         # Return the Pinecone index object
         return pc.Index(index_name)
     
-    except pinecone.exceptions.ApiException as e:
-        if e.status_code == 409:  # Index already exists
-            st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
-            return pinecone.Index(index_name)
-        elif e.status_code == 400:  # Invalid argument (e.g., invalid index name)
-            st.error("Error: Invalid index name. Ensure it consists of lowercase alphanumeric characters or hyphens (-).")
-        else:
-            st.error(f"Error initializing Pinecone: {str(e)}")
-        return None
-    
     except Exception as e:
         st.error(f"Unexpected error initializing Pinecone: {str(e)}")
         return None
