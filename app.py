@@ -83,7 +83,16 @@ def select_pinecone_index():
     
     # Get the user's Pinecone API key from the database
     pinecone_api_key = st.session_state.db.get_pinecone_api_key(st.session_state.user_id)
-    pc = Pinecone(api_key=pinecone_api_key)
+    if not pinecone_api_key:
+        st.error("Pinecone API key not found for your account. Please contact an administrator.")
+        return
+    
+    # Initialize Pinecone client
+    try:
+        pc = Pinecone(api_key=pinecone_api_key)
+    except Exception as e:
+        st.error(f"Failed to connect to Pinecone: {str(e)}")
+        return
     
     # List available indexes
     index_list = [index.name for index in pc.list_indexes()]
@@ -99,7 +108,7 @@ def select_pinecone_index():
         st.session_state.pinecone_index_name = selected_index
         st.success(f"Connected to Pinecone index: {selected_index}")
         
-        # Initialize RAGSystem with the selected index
+        # Reinitialize RAGSystem with the selected index
         user_details = st.session_state.db.get_user_details(st.session_state.user_id)
         st.session_state.rag_system = RAGSystem(
             api_key=user_details["api_key"],
@@ -633,7 +642,6 @@ def display_chat_interface():
         
         st.session_state.chat_messages.append((str(uuid.uuid4()), True, prompt, datetime.now()))
         st.session_state.chat_messages.append((str(uuid.uuid4()), False, full_response, datetime.now()))
-
 # Add custom CSS for better styling with dark mode compatibility
 def custom_css():
     st.markdown("""
