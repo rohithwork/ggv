@@ -7,7 +7,7 @@ import math
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
-def generate_and_store_embeddings(chunks, index, batch_size=100):
+def generate_and_store_embeddings(chunks, index, batch_size=100, progress_callback=None):
     """
     Generate embeddings for chunks and store them in Pinecone in batches.
     
@@ -15,6 +15,7 @@ def generate_and_store_embeddings(chunks, index, batch_size=100):
     - chunks: List of chunk dictionaries with text and optional source.
     - index: Pinecone index to upsert vectors.
     - batch_size: Number of vectors to upsert in each batch (default 100).
+    - progress_callback: A callback function to report progress to the UI.
     """
     # Initialize embedding model
     embedding_model = SentenceTransformer("all-mpnet-base-v2", device=device)
@@ -55,8 +56,11 @@ def generate_and_store_embeddings(chunks, index, batch_size=100):
             
             # Upsert the current batch of vectors
             index.upsert(vectors=vectors)
-            print(f"✅ Batch {batch_num + 1}/{total_batches}: {len(vectors)} vectors upserted.")
-        
+            
+            # Report progress via the callback
+            if progress_callback:
+                progress_callback(batch_num + 1, total_batches, len(vectors))
+            
         except Exception as e:
             print(f"❌ Error upserting batch {batch_num + 1}: {str(e)}")
             continue  # Continue processing remaining batches even if one fails
