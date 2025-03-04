@@ -283,3 +283,36 @@ class Database:
             (conversation_id, user_id)
         )
         return c.fetchone() is not None
+    # Add these methods to the Database class
+
+    def login_user_without_password(self, email):
+        """Login a non-admin user with just email (no password required)"""
+        c = self.conn.cursor()
+        c.execute("SELECT user_id, is_admin FROM users WHERE email = %s", (email,))
+        result = c.fetchone()
+    
+        if not result:
+            return False, "User not found"
+    
+        # Update last login time
+        c.execute("UPDATE users SET last_login = %s WHERE user_id = %s", (datetime.now(), result[0]))
+        self.conn.commit()
+        return True, {"user_id": result[0], "is_admin": result[1]}
+
+# Modify the existing login_user method to check admin status
+    def login_user(self, email, password):
+        """Login a user with email and password (for admin users)"""
+        c = self.conn.cursor()
+        c.execute("SELECT user_id, password_hash, is_admin FROM users WHERE email = %s", (email,))
+        result = c.fetchone()
+    
+        if not result:
+            return False, "User not found"
+    
+        if result[1] == self.hash_password(password):
+        # Update last login time
+            c.execute("UPDATE users SET last_login = %s WHERE user_id = %s", (datetime.now(), result[0]))
+            self.conn.commit()
+            return True, {"user_id": result[0], "is_admin": result[2]}
+    
+        return False, "Invalid password"
