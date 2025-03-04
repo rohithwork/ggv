@@ -299,7 +299,7 @@ class Database:
         self.conn.commit()
         return True, {"user_id": result[0], "is_admin": result[1]}
 
-# Modify the existing login_user method to check admin status
+    # Modify the existing login_user method to check admin status
     def login_user(self, email, password):
         """Login a user with email and password (for admin users)"""
         c = self.conn.cursor()
