@@ -41,7 +41,7 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
         # Return the Pinecone index object
         return pc.Index(index_name)
     
-    except pc.core.client.exceptions.ApiException as e:
+    except pinecone.core.client.exceptions.ApiException as e:
         if e.status == 409:  # Index already exists
             st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
             return pinecone.Index(index_name)
