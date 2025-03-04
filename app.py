@@ -5,6 +5,7 @@ from datetime import datetime
 import uuid
 import pinecone
 from pinecone import ServerlessSpec, Pinecone 
+import re
 
 # Import custom modules
 from database import Database
