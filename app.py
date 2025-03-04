@@ -40,98 +40,6 @@ def get_db_connection():
     return Database(db_url)
 
 
-def display_admin_page():
-    """Display the admin dashboard with user management and all conversations"""
-    st.title("🔧 Admin Dashboard")
-    
-    # Create tabs for different admin functions
-    admin_tabs = st.tabs(["👥 User Management", "💬 All Conversations"])
-    
-    with admin_tabs[0]:  # User Management Tab
-        st.subheader("Manage Users")
-        
-        # Form to add new users
-        with st.form("add_user_form"):
-            st.subheader("Register New User")
-            new_email = st.text_input("Email")
-            new_password = st.text_input("Password", type="password")
-            api_key = st.text_input("Cohere API Key", 
-                                   help="Enter Cohere API key to be used by this user")
-            is_admin = st.checkbox("Admin privileges")
-            
-            submitted = st.form_submit_button("Add User", type="primary")
-            
-            if submitted:
-                if new_email and new_password and api_key:
-                    success, result = st.session_state.db.register_user(new_email, new_password, api_key, is_admin)
-                    if success:
-                        st.success(f"Successfully registered user: {new_email}")
-                    else:
-                        st.error(result)
-                else:
-                    st.warning("Please fill all fields")
-        
-        # Display all users
-        st.subheader("Existing Users")
-        users = st.session_state.db.get_all_users()
-        
-        if not users:
-            st.info("No users found.")
-        else:
-            # Create a DataFrame for better display
-            user_data = []
-            for user in users:
-                user_id, email, is_admin, created_at, last_login = user
-                user_data.append({
-                    "Email": email,
-                    "Admin": "✅" if is_admin else "❌",
-                    "Created": created_at.strftime("%Y-%m-%d %H:%M") if created_at else "N/A",
-                    "Last Login": last_login.strftime("%Y-%m-%d %H:%M") if last_login else "Never"
-                })
-            
-            import pandas as pd
-            df = pd.DataFrame(user_data)
-            st.dataframe(df)
-    
-    with admin_tabs[1]:  # All Conversations Tab
-        st.subheader("All User Conversations")
-        
-        # Get all conversations (admin has access to all)
-        conversations = st.session_state.db.get_user_conversations(st.session_state.user_id, is_admin=True)
-        
-        if not conversations:
-            st.info("No conversations found.")
-        else:
-            # Display conversations in a table
-            for conv in conversations:
-                conv_id, title, created_at, user_email = conv
-                
-                with st.container():
-                    cols = st.columns([3, 1, 1])
-                    
-                    with cols[0]:
-                        button_label = f"{title} ({user_email})"
-                        if len(button_label) > 40:
-                            button_label = button_label[:37] + "..."
-                        
-                        if st.button(button_label, key=f"admin_conv_{conv_id}", use_container_width=True):
-                            st.session_state.current_conversation_id = conv_id
-                            st.session_state.conversation_title = title
-                            st.session_state.viewing_as_admin = True
-                            load_conversation_messages()
-                            # Redirect to chat interface
-                            st.session_state.admin_view = False
-                            st.rerun()
-                    
-                    with cols[1]:
-                        # Format date
-                        st.text(created_at.strftime("%Y-%m-%d"))
-                    
-                    with cols[2]:
-                        if st.button("🗑️", key=f"admin_del_{conv_id}", help="Delete conversation"):
-                            st.session_state.db.delete_conversation(conv_id)
-                            st.rerun()
-
 # Improved Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
@@ -272,6 +180,7 @@ def start_new_chat():
         st.error(f"Failed to start new chat: {e}")
         print(f"Error starting new chat: {e}")
 
+# Replace the current display_auth_page() function with this one
 def display_auth_page():
     # Create a nice container for the auth form
     with st.container():
@@ -283,69 +192,135 @@ def display_auth_page():
             st.markdown("*Your internal knowledge base companion*")
             st.markdown("---")
             
-            # Create login and registration tabs
-            tab1, tab2 = st.tabs(["Login", "Register"])
-            
-            with tab1:
-                with st.form("login_form"):
-                    st.subheader("Login")
-                    email = st.text_input("Email", key="login_email")
-                    password = st.text_input("Password", type="password", key="login_password")
-                    
-                    submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
-                    
-                    if submitted:
-                        if email and password:
-                            success, result = st.session_state.db.login_user(email, password)
-                            if success:
-                                st.session_state.authenticated = True
-                                st.session_state.user_id = result["user_id"]
-                                st.session_state.is_admin = result["is_admin"]
-                                st.session_state.email = email
+            # Only have login form, no registration
+            with st.form("login_form"):
+                st.subheader("Login")
+                email = st.text_input("Email", key="login_email")
+                password = st.text_input("Password", type="password", key="login_password")
+                
+                submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
+                
+                if submitted:
+                    if email and password:
+                        success, result = st.session_state.db.login_user(email, password)
+                        if success:
+                            st.session_state.authenticated = True
+                            st.session_state.user_id = result["user_id"]
+                            st.session_state.is_admin = result["is_admin"]
+                            st.session_state.email = email
+                            
+                            # Get user details
+                            user_details = st.session_state.db.get_user_details(result["user_id"])
+                            st.session_state.api_key = user_details["api_key"]
+                            st.session_state.rag_system = RAGSystem(user_details["api_key"])
+                            
+                            # Initialize admin view state if admin
+                            if result["is_admin"]:
+                                st.session_state.admin_view = False  # Start with chat view
                                 
-                                # Get user details
-                                user_details = st.session_state.db.get_user_details(result["user_id"])
-                                st.session_state.api_key = user_details["api_key"]
-                                st.session_state.rag_system = RAGSystem(user_details["api_key"])
-                                
-                                # Initialize admin view state if admin
-                                if result["is_admin"]:
-                                    st.session_state.admin_view = False  # Start with chat view
-                                    
-                                # Start with a new chat
-                                start_new_chat()
-                                st.rerun()
-                            else:
-                                st.error(result)
+                            # Start with a new chat
+                            start_new_chat()
+                            st.rerun()
                         else:
-                            st.warning("Please enter both email and password")
+                            st.error(result)
+                    else:
+                        st.warning("Please enter both email and password")
             
-            with tab2:
-                with st.form("register_form"):
-                    st.subheader("Register")
-                    new_username = st.text_input("Username", key="reg_username")
-                    new_email = st.text_input("Email", key="reg_email")
-                    new_password = st.text_input("Password", type="password", key="reg_password")
-                    confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
-                    api_key = st.text_input("Cohere API Key", key="reg_api_key", 
-                                           help="Enter your Cohere API key. This will be used for retrieving and generating responses.")
+            # Information for new users
+            st.info("If you don't have an account, please contact an administrator.")
+
+# Update the display_admin_page() function to ensure user registration works correctly
+def display_admin_page():
+    """Display the admin dashboard with user management and all conversations"""
+    st.title("🔧 Admin Dashboard")
+    
+    # Create tabs for different admin functions
+    admin_tabs = st.tabs(["👥 User Management", "💬 All Conversations"])
+    
+    with admin_tabs[0]:  # User Management Tab
+        st.subheader("Manage Users")
+        
+        # Form to add new users
+        with st.form("add_user_form"):
+            st.subheader("Register New User")
+            new_email = st.text_input("Email")
+            new_password = st.text_input("Password", type="password")
+            api_key = st.text_input("Cohere API Key", 
+                                   help="Enter Cohere API key to be used by this user")
+            is_admin = st.checkbox("Admin privileges")
+            
+            submitted = st.form_submit_button("Add User", type="primary")
+            
+            if submitted:
+                if new_email and new_password and api_key:
+                    success, result = st.session_state.db.register_user(new_email, new_password, api_key, is_admin)
+                    if success:
+                        st.success(f"Successfully registered user: {new_email}")
+                    else:
+                        st.error(result)
+                else:
+                    st.warning("Please fill all fields")
+        
+        # Display all users
+        st.subheader("Existing Users")
+        users = st.session_state.db.get_all_users()
+        
+        if not users:
+            st.info("No users found.")
+        else:
+            # Create a DataFrame for better display
+            user_data = []
+            for user in users:
+                user_id, email, is_admin, created_at, last_login = user
+                user_data.append({
+                    "Email": email,
+                    "Admin": "✅" if is_admin else "❌",
+                    "Created": created_at.strftime("%Y-%m-%d %H:%M") if created_at else "N/A",
+                    "Last Login": last_login.strftime("%Y-%m-%d %H:%M") if last_login else "Never"
+                })
+            
+            import pandas as pd
+            df = pd.DataFrame(user_data)
+            st.dataframe(df)
+    
+    with admin_tabs[1]:  # All Conversations Tab
+        st.subheader("All User Conversations")
+        
+        # Get all conversations (admin has access to all)
+        conversations = st.session_state.db.get_user_conversations(st.session_state.user_id, is_admin=True)
+        
+        if not conversations:
+            st.info("No conversations found.")
+        else:
+            # Display conversations in a table
+            for conv in conversations:
+                conv_id, title, created_at, user_email = conv
+                
+                with st.container():
+                    cols = st.columns([3, 1, 1])
                     
-                    submitted = st.form_submit_button("Register", type="primary", use_container_width=True)
+                    with cols[0]:
+                        button_label = f"{title} ({user_email})"
+                        if len(button_label) > 40:
+                            button_label = button_label[:37] + "..."
+                        
+                        if st.button(button_label, key=f"admin_conv_{conv_id}", use_container_width=True):
+                            st.session_state.current_conversation_id = conv_id
+                            st.session_state.conversation_title = title
+                            st.session_state.viewing_as_admin = True
+                            load_conversation_messages()
+                            # Redirect to chat interface
+                            st.session_state.admin_view = False
+                            st.rerun()
                     
-                    if submitted:
-                        if new_username and new_email and new_password and api_key:
-                            if new_password != confirm_password:
-                                st.error("Passwords do not match")
-                            else:
-                                success, result = st.session_state.db.register_user(new_username, new_password, new_email, api_key)
-                                if success:
-                                    st.success("Registration successful! Please login.")
-                                    # Switch to the login tab
-                                    st.rerun()
-                                else:
-                                    st.error(result)
-                        else:
-                            st.warning("Please fill all fields")
+                    with cols[1]:
+                        # Format date
+                        st.text(created_at.strftime("%Y-%m-%d"))
+                    
+                    with cols[2]:
+                        if st.button("🗑️", key=f"admin_del_{conv_id}", help="Delete conversation"):
+                            st.session_state.db.delete_conversation(conv_id)
+                            st.rerun()
                             
 def display_chat_interface():
     # Create a container for the chat header
