@@ -283,39 +283,42 @@ def display_auth_page():
             st.markdown("*Your internal knowledge base companion*")
             st.markdown("---")
             
-            # Only have login, remove registration tab
-            with st.form("login_form"):
-                st.subheader("Login")
-                email = st.text_input("Email", key="login_email")
-                password = st.text_input("Password", type="password", key="login_password")
-                
-                submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
-                
-                if submitted:
-                    if email and password:
-                        success, result = st.session_state.db.login_user(email, password)
-                        if success:
-                            st.session_state.authenticated = True
-                            st.session_state.user_id = result["user_id"]
-                            st.session_state.is_admin = result["is_admin"]
-                            st.session_state.email = email
-                            
-                            # Get user details
-                            user_details = st.session_state.db.get_user_details(result["user_id"])
-                            st.session_state.api_key = user_details["api_key"]
-                            st.session_state.rag_system = RAGSystem(user_details["api_key"])
-                            
-                            # Initialize admin view state if admin
-                            if result["is_admin"]:
-                                st.session_state.admin_view = False  # Start with chat view
+            # Create login and registration tabs
+            tab1, tab2 = st.tabs(["Login", "Register"])
+            
+            with tab1:
+                with st.form("login_form"):
+                    st.subheader("Login")
+                    email = st.text_input("Email", key="login_email")
+                    password = st.text_input("Password", type="password", key="login_password")
+                    
+                    submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
+                    
+                    if submitted:
+                        if email and password:
+                            success, result = st.session_state.db.login_user(email, password)
+                            if success:
+                                st.session_state.authenticated = True
+                                st.session_state.user_id = result["user_id"]
+                                st.session_state.is_admin = result["is_admin"]
+                                st.session_state.email = email
                                 
-                            # Start with a new chat
-                            start_new_chat()
-                            st.rerun()
+                                # Get user details
+                                user_details = st.session_state.db.get_user_details(result["user_id"])
+                                st.session_state.api_key = user_details["api_key"]
+                                st.session_state.rag_system = RAGSystem(user_details["api_key"])
+                                
+                                # Initialize admin view state if admin
+                                if result["is_admin"]:
+                                    st.session_state.admin_view = False  # Start with chat view
+                                    
+                                # Start with a new chat
+                                start_new_chat()
+                                st.rerun()
+                            else:
+                                st.error(result)
                         else:
-                            st.error(result)
-                    else:
-                        st.warning("Please enter both email and password")
+                            st.warning("Please enter both email and password")
             
             with tab2:
                 with st.form("register_form"):
@@ -343,7 +346,7 @@ def display_auth_page():
                                     st.error(result)
                         else:
                             st.warning("Please fill all fields")
-
+                            
 def display_chat_interface():
     # Create a container for the chat header
     with st.container():
