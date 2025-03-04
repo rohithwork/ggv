@@ -23,7 +23,7 @@ import re
 from pinecone import Pinecone
 import streamlit as st
 
-def initialize_pinecone(api_key, environment, index_name, dimension=384):
+def initialize_pinecone(api_key, environment, index_name, dimension=768):
     try:
         # Validate the index name using a regular expression
         if not re.match(r'^[a-z0-9\-]+$', index_name):
@@ -496,7 +496,7 @@ def display_admin_page():
                         pc.delete_index(index_name)
                     pc.create_index(
                         name=index_name,
-                        dimension=384,
+                        dimension=768,
                         metric='cosine',
                         spec=pc.ServerlessSpec(cloud='aws', region=pinecone_environment)
                     )
