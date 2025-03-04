@@ -21,6 +21,11 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
             metric='cosine',
             spec=ServerlessSpec(cloud='aws', region=environment)
         )
+        st.success(f"Pinecone index '{index_name}' created successfully.")
+    else:
+        st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
+        
+        
     return pc.Index(index_name)
 
 # Configuration for Neon database
