@@ -19,6 +19,10 @@ import re
 import pinecone
 import streamlit as st
 
+import re
+from pinecone import Pinecone
+import streamlit as st
+
 def initialize_pinecone(api_key, environment, index_name, dimension=384):
     try:
         # Validate the index name using a regular expression
@@ -30,7 +34,8 @@ def initialize_pinecone(api_key, environment, index_name, dimension=384):
         pc = Pinecone(api_key=api_key)
         
         # Check if the index exists
-        if index_name in pinecone.list_indexes():
+        index_list = [index.name for index in pc.list_indexes()]
+        if index_name in index_list:
             st.info(f"Pinecone index '{index_name}' already exists.")
             
             # Ask the user what to do
@@ -50,7 +55,7 @@ def initialize_pinecone(api_key, environment, index_name, dimension=384):
                     name=index_name,
                     dimension=dimension,  # Adjust based on your embedding model
                     metric='cosine',
-                    spec=ServerlessSpec(cloud='aws', region=environment)
+                    spec=pc.ServerlessSpec(cloud='aws', region=environment)
                 )
                 st.success(f"Created new Pinecone index '{index_name}'.")
             else:
@@ -61,7 +66,7 @@ def initialize_pinecone(api_key, environment, index_name, dimension=384):
                 name=index_name,
                 dimension=dimension,  # Adjust based on your embedding model
                 metric='cosine',
-                spec=ServerlessSpec(cloud='aws', region=environment)
+                spec=pc.ServerlessSpec(cloud='aws', region=environment)
             )
             st.success(f"Pinecone index '{index_name}' created successfully.")
         
@@ -437,7 +442,6 @@ def display_admin_page():
                                 st.rerun()
         except Exception as e:
             st.error(f"Error loading conversations: {str(e)}")
-
     with admin_tabs[2]:
         st.subheader("Manage Knowledge Base")
         
@@ -487,13 +491,14 @@ def display_admin_page():
                 st.error("Only admins can reset the Pinecone index.")
             else:
                 try:
-                    if index_name in pinecone.list_indexes():
-                        pinecone.delete_index(index_name)
-                    pinecone.create_index(
+                    pc = Pinecone(api_key=pinecone_api_key)
+                    if index_name in [index.name for index in pc.list_indexes()]:
+                        pc.delete_index(index_name)
+                    pc.create_index(
                         name=index_name,
                         dimension=384,
                         metric='cosine',
-                        spec=pinecone.ServerlessSpec(cloud='aws', region=pinecone_environment)
+                        spec=pc.ServerlessSpec(cloud='aws', region=pinecone_environment)
                     )
                     st.success("Pinecone index reset successfully.")
                 except Exception as e:
