@@ -10,7 +10,7 @@ from rag_system import RAGSystem
 from chunking import parse_markdown, chunk_content
 from embedding import generate_and_store_embeddings
 
-def initialize_pinecone(api_key, environment, index_name, dimension=768:
+def initialize_pinecone(api_key, environment, index_name, dimension=768):
     pinecone.init(api_key=api_key, environment=environment)
     if index_name not in pinecone.list_indexes():
         pinecone.create_index(
