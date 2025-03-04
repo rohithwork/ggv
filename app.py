@@ -331,14 +331,15 @@ def display_auth_page():
             # Information for new users
             st.info("If you don't have an account, please contact an administrator.")
 
-# Modified display_admin_page() function for user registration
 def display_admin_page():
+    """Display the admin dashboard with user management, Pinecone API key management, knowledge base management, and conversations"""
     st.title("🔧 Admin Dashboard")
     
     # Create tabs for different admin functions
-    admin_tabs = st.tabs(["👥 User Management", "💬 All Conversations", "📚 Knowledge Base Management"])
+    admin_tabs = st.tabs(["👥 User Management", "🔑 Pinecone API Key Management", "📚 Knowledge Base Management", "💬 All Conversations"])
     
-    with admin_tabs[0]:  # User Management Tab
+    # User Management Tab
+    with admin_tabs[0]:
         st.subheader("Manage Users")
         
         # Form to add new users
@@ -346,34 +347,20 @@ def display_admin_page():
             st.subheader("Register New User")
             new_email = st.text_input("Email")
             is_admin = st.checkbox("Admin privileges")
-            
-            # Only require password for admin users
-            new_password = None
-            if is_admin:
-                new_password = st.text_input("Password", type="password", 
-                                            help="Password required for admin accounts")
-            
-            api_key = st.text_input("Cohere API Key", 
-                                  help="Enter Cohere API key to be used by this user")
+            api_key = st.text_input("Cohere API Key", help="Enter Cohere API key to be used by this user")
+            pinecone_api_key = st.text_input("Pinecone API Key", help="Enter Pinecone API key to be used by this user")
             
             submitted = st.form_submit_button("Add User", type="primary")
             
             if submitted:
-                if not new_email or not api_key:
-                    st.warning("Email and API key are required")
-                elif is_admin and not new_password:
-                    st.warning("Password is required for admin accounts")
+                if not new_email or not api_key or not pinecone_api_key:
+                    st.warning("Email, Cohere API key, and Pinecone API key are required")
                 else:
-                    try:
-                        # Use a default password for non-admin users
-                        password_to_use = new_password if is_admin else "no_password_required"
-                        success, result = st.session_state.db.register_user(new_email, password_to_use, api_key, is_admin)
-                        if success:
-                            st.success(f"Successfully registered user: {new_email}")
-                        else:
-                            st.error(result)
-                    except Exception as e:
-                        st.error(f"Error registering user: {str(e)}")
+                    success, result = st.session_state.db.register_user(new_email, "no_password_required", api_key, pinecone_api_key, is_admin)
+                    if success:
+                        st.success(f"Successfully registered user: {new_email}")
+                    else:
+                        st.error(result)
         
         # Display all users
         st.subheader("Existing Users")
@@ -383,7 +370,6 @@ def display_admin_page():
             if not users:
                 st.info("No users found.")
             else:
-                # Create a DataFrame for better display
                 user_data = []
                 for user in users:
                     user_id, email, is_admin, created_at, last_login = user
@@ -400,48 +386,30 @@ def display_admin_page():
         except Exception as e:
             st.error(f"Error loading users: {str(e)}")
     
-    # Rest of the function remains unchanged
-    with admin_tabs[1]:  # All Conversations Tab
-        st.subheader("All User Conversations")
+    # Pinecone API Key Management Tab
+    with admin_tabs[1]:
+        st.subheader("Manage Pinecone API Keys")
         
-        # Get all conversations (admin has access to all)
-        try:
-            conversations = st.session_state.db.get_user_conversations(st.session_state.user_id, is_admin=True)
+        # Select user to update Pinecone API key
+        user_emails = [user[1] for user in st.session_state.db.get_all_users()]
+        selected_email = st.selectbox("Select User", user_emails)
+        
+        if selected_email:
+            user_id = [user[0] for user in st.session_state.db.get_all_users() if user[1] == selected_email][0]
+            current_pinecone_api_key = st.session_state.db.get_pinecone_api_key(user_id)
             
-            if not conversations:
-                st.info("No conversations found.")
-            else:
-                # Display conversations in a table
-                for conv in conversations:
-                    conv_id, title, created_at, user_email = conv
-                    
-                    with st.container():
-                        cols = st.columns([3, 1, 1])
-                        
-                        with cols[0]:
-                            button_label = f"{title} ({user_email})"
-                            if len(button_label) > 40:
-                                button_label = button_label[:37] + "..."
-                            
-                            if st.button(button_label, key=f"admin_conv_{conv_id}", use_container_width=True):
-                                st.session_state.current_conversation_id = conv_id
-                                st.session_state.conversation_title = title
-                                st.session_state.viewing_as_admin = True
-                                load_conversation_messages()
-                                # Redirect to chat interface
-                                st.session_state.admin_view = False
-                                st.rerun()
-                        
-                        with cols[1]:
-                            # Format date
-                            st.text(created_at.strftime("%Y-%m-%d"))
-                        
-                        with cols[2]:
-                            if st.button("🗑️", key=f"admin_del_{conv_id}", help="Delete conversation"):
-                                st.session_state.db.delete_conversation(conv_id)
-                                st.rerun()
-        except Exception as e:
-            st.error(f"Error loading conversations: {str(e)}")
+            st.markdown(f"**Current Pinecone API Key:** `{current_pinecone_api_key}`")
+            
+            new_pinecone_api_key = st.text_input("New Pinecone API Key", type="password")
+            
+            if st.button("Update Pinecone API Key", type="primary"):
+                success, message = st.session_state.db.update_pinecone_api_key(user_id, new_pinecone_api_key, st.session_state.user_id)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+    
+    # Knowledge Base Management Tab
     with admin_tabs[2]:
         st.subheader("Manage Knowledge Base")
         
@@ -496,13 +464,56 @@ def display_admin_page():
                         pc.delete_index(index_name)
                     pc.create_index(
                         name=index_name,
-                        dimension=768,
+                        dimension=768
                         metric='cosine',
                         spec=pc.ServerlessSpec(cloud='aws', region=pinecone_environment)
                     )
                     st.success("Pinecone index reset successfully.")
                 except Exception as e:
                     st.error(f"Error resetting Pinecone index: {str(e)}")
+    
+    # All Conversations Tab
+    with admin_tabs[3]:
+        st.subheader("All User Conversations")
+        
+        # Get all conversations (admin has access to all)
+        try:
+            conversations = st.session_state.db.get_user_conversations(st.session_state.user_id, is_admin=True)
+            
+            if not conversations:
+                st.info("No conversations found.")
+            else:
+                # Display conversations in a table
+                for conv in conversations:
+                    conv_id, title, created_at, user_email = conv
+                    
+                    with st.container():
+                        cols = st.columns([3, 1, 1])
+                        
+                        with cols[0]:
+                            button_label = f"{title} ({user_email})"
+                            if len(button_label) > 40:
+                                button_label = button_label[:37] + "..."
+                            
+                            if st.button(button_label, key=f"admin_conv_{conv_id}", use_container_width=True):
+                                st.session_state.current_conversation_id = conv_id
+                                st.session_state.conversation_title = title
+                                st.session_state.viewing_as_admin = True
+                                load_conversation_messages()
+                                # Redirect to chat interface
+                                st.session_state.admin_view = False
+                                st.rerun()
+                        
+                        with cols[1]:
+                            # Format date
+                            st.text(created_at.strftime("%Y-%m-%d"))
+                        
+                        with cols[2]:
+                            if st.button("🗑️", key=f"admin_del_{conv_id}", help="Delete conversation"):
+                                st.session_state.db.delete_conversation(conv_id)
+                                st.rerun()
+        except Exception as e:
+            st.error(f"Error loading conversations: {str(e)}")
                             
 def display_chat_interface():
     # Create a container for the chat header
