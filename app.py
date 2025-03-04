@@ -39,6 +39,99 @@ def get_db_connection():
     # Return database connection with the URL
     return Database(db_url)
 
+
+def display_admin_page():
+    """Display the admin dashboard with user management and all conversations"""
+    st.title("🔧 Admin Dashboard")
+    
+    # Create tabs for different admin functions
+    admin_tabs = st.tabs(["👥 User Management", "💬 All Conversations"])
+    
+    with admin_tabs[0]:  # User Management Tab
+        st.subheader("Manage Users")
+        
+        # Form to add new users
+        with st.form("add_user_form"):
+            st.subheader("Register New User")
+            new_email = st.text_input("Email")
+            new_password = st.text_input("Password", type="password")
+            api_key = st.text_input("Cohere API Key", 
+                                   help="Enter Cohere API key to be used by this user")
+            is_admin = st.checkbox("Admin privileges")
+            
+            submitted = st.form_submit_button("Add User", type="primary")
+            
+            if submitted:
+                if new_email and new_password and api_key:
+                    success, result = st.session_state.db.register_user(new_email, new_password, api_key, is_admin)
+                    if success:
+                        st.success(f"Successfully registered user: {new_email}")
+                    else:
+                        st.error(result)
+                else:
+                    st.warning("Please fill all fields")
+        
+        # Display all users
+        st.subheader("Existing Users")
+        users = st.session_state.db.get_all_users()
+        
+        if not users:
+            st.info("No users found.")
+        else:
+            # Create a DataFrame for better display
+            user_data = []
+            for user in users:
+                user_id, email, is_admin, created_at, last_login = user
+                user_data.append({
+                    "Email": email,
+                    "Admin": "✅" if is_admin else "❌",
+                    "Created": created_at.strftime("%Y-%m-%d %H:%M") if created_at else "N/A",
+                    "Last Login": last_login.strftime("%Y-%m-%d %H:%M") if last_login else "Never"
+                })
+            
+            import pandas as pd
+            df = pd.DataFrame(user_data)
+            st.dataframe(df)
+    
+    with admin_tabs[1]:  # All Conversations Tab
+        st.subheader("All User Conversations")
+        
+        # Get all conversations (admin has access to all)
+        conversations = st.session_state.db.get_user_conversations(st.session_state.user_id, is_admin=True)
+        
+        if not conversations:
+            st.info("No conversations found.")
+        else:
+            # Display conversations in a table
+            for conv in conversations:
+                conv_id, title, created_at, user_email = conv
+                
+                with st.container():
+                    cols = st.columns([3, 1, 1])
+                    
+                    with cols[0]:
+                        button_label = f"{title} ({user_email})"
+                        if len(button_label) > 40:
+                            button_label = button_label[:37] + "..."
+                        
+                        if st.button(button_label, key=f"admin_conv_{conv_id}", use_container_width=True):
+                            st.session_state.current_conversation_id = conv_id
+                            st.session_state.conversation_title = title
+                            st.session_state.viewing_as_admin = True
+                            load_conversation_messages()
+                            # Redirect to chat interface
+                            st.session_state.admin_view = False
+                            st.rerun()
+                    
+                    with cols[1]:
+                        # Format date
+                        st.text(created_at.strftime("%Y-%m-%d"))
+                    
+                    with cols[2]:
+                        if st.button("🗑️", key=f"admin_del_{conv_id}", help="Delete conversation"):
+                            st.session_state.db.delete_conversation(conv_id)
+                            st.rerun()
+
 # Improved Streamlit UI Components
 def create_sidebar():
     with st.sidebar:
@@ -50,48 +143,71 @@ def create_sidebar():
         st.markdown("*Internal Knowledge Assistant*")
         
         if st.session_state.get("authenticated", False):
-            st.button("✨ New Chat", on_click=start_new_chat, type="primary", use_container_width=True)
+            # If user is admin, show admin controls
+            if st.session_state.get("is_admin", False):
+                # Toggle between admin view and chat view
+                if st.session_state.get("admin_view", False):
+                    st.button("💬 Chat View", on_click=toggle_admin_view, type="primary", use_container_width=True)
+                else:
+                    st.button("🔧 Admin Dashboard", on_click=toggle_admin_view, type="primary", use_container_width=True)
+                    st.button("✨ New Chat", on_click=start_new_chat, type="secondary", use_container_width=True)
+            else:
+                # Regular user only sees new chat button
+                st.button("✨ New Chat", on_click=start_new_chat, type="primary", use_container_width=True)
             
             st.markdown("---")
             
-            # Display user's conversations with improved UI
-            st.subheader("💬 Your Conversations")
-            conversations = st.session_state.db.get_user_conversations(st.session_state.user_id)
+            # Only show conversation list in chat view
+            if not st.session_state.get("admin_view", False):
+                # Display user's conversations with improved UI
+                st.subheader("💬 Your Conversations")
+                # Regular users see their own conversations, admins see all if in admin view
+                is_admin_view = st.session_state.get("is_admin", False) and st.session_state.get("admin_view", False)
+                conversations = st.session_state.db.get_user_conversations(
+                    st.session_state.user_id, 
+                    is_admin=is_admin_view
+                )
 
-            if not conversations:
-                st.info("No conversations yet. Start a new chat!")
-            
-            for conv in conversations:
-                with st.container():
-                    cols = st.columns([4, 1])
-                    # Make button look like a conversation entry
-                    button_label = f"{conv[1]}"
-                    # Truncate long conversation titles
-                    if len(button_label) > 25:
-                        button_label = button_label[:22] + "..."
-                    
-                    with cols[0]:
-                        if st.button(button_label, key=f"conv_{conv[0]}", use_container_width=True):
-                            st.session_state.current_conversation_id = conv[0]
-                            st.session_state.conversation_title = conv[1]
-                            load_conversation_messages()
-                    
-                    with cols[1]:
-                        if st.button("🗑️", key=f"del_{conv[0]}", help="Delete conversation"):
-                            # Delete conversation immediately without confirmation
-                            delete_conversation(conv[0])
+                if not conversations:
+                    st.info("No conversations yet. Start a new chat!")
+                
+                for conv in conversations:
+                    with st.container():
+                        cols = st.columns([4, 1])
+                        # Make button look like a conversation entry
+                        button_label = f"{conv[1]}"
+                        # Truncate long conversation titles
+                        if len(button_label) > 25:
+                            button_label = button_label[:22] + "..."
+                        
+                        with cols[0]:
+                            if st.button(button_label, key=f"conv_{conv[0]}", use_container_width=True):
+                                st.session_state.current_conversation_id = conv[0]
+                                st.session_state.conversation_title = conv[1]
+                                st.session_state.viewing_as_admin = False
+                                load_conversation_messages()
+                        
+                        with cols[1]:
+                            if st.button("🗑️", key=f"del_{conv[0]}", help="Delete conversation"):
+                                # Delete conversation immediately without confirmation
+                                delete_conversation(conv[0])
             
             st.markdown("---")
             # User info and logout section
-            if "username" in st.session_state:
-                st.caption(f"Logged in as: **{st.session_state.username}**")
+            if "email" in st.session_state:
+                user_type = "Admin" if st.session_state.get("is_admin", False) else "User"
+                st.caption(f"Logged in as: **{st.session_state.email}** ({user_type})")
             
             if st.button("🚪 Logout", type="secondary", use_container_width=True):
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
                 st.rerun()
         else:
-            st.info("Please login or register to continue.")
+            st.info("Please login to continue.")
+
+def toggle_admin_view():
+    """Toggle between admin view and chat view"""
+    st.session_state.admin_view = not st.session_state.get("admin_view", False)
 
 def delete_conversation(conv_id):
     st.session_state.db.delete_conversation(conv_id)
@@ -110,6 +226,16 @@ def delete_conversation(conv_id):
 
 def load_conversation_messages():
     if st.session_state.get("current_conversation_id"):
+        # Check if user has permission to access this conversation
+        if not st.session_state.db.can_access_conversation(
+            st.session_state.user_id, 
+            st.session_state.current_conversation_id
+        ):
+            st.error("You don't have permission to access this conversation")
+            start_new_chat()
+            st.rerun()
+            return
+            
         # Get ALL messages for this conversation
         messages = st.session_state.db.get_conversation_messages(st.session_state.current_conversation_id)
         st.session_state.chat_messages = messages
@@ -157,37 +283,39 @@ def display_auth_page():
             st.markdown("*Your internal knowledge base companion*")
             st.markdown("---")
             
-            # Create tabs with improved styling
-            tab1, tab2 = st.tabs(["🔑 Login", "📝 Register"])
-            
-            with tab1:
-                with st.form("login_form"):
-                    st.subheader("Login")
-                    username = st.text_input("Username", key="login_username")
-                    password = st.text_input("Password", type="password", key="login_password")
-                    
-                    submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
-                    
-                    if submitted:
-                        if username and password:
-                            success, result = st.session_state.db.login_user(username, password)
-                            if success:
-                                st.session_state.authenticated = True
-                                st.session_state.user_id = result
-                                st.session_state.username = username
+            # Only have login, remove registration tab
+            with st.form("login_form"):
+                st.subheader("Login")
+                email = st.text_input("Email", key="login_email")
+                password = st.text_input("Password", type="password", key="login_password")
+                
+                submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
+                
+                if submitted:
+                    if email and password:
+                        success, result = st.session_state.db.login_user(email, password)
+                        if success:
+                            st.session_state.authenticated = True
+                            st.session_state.user_id = result["user_id"]
+                            st.session_state.is_admin = result["is_admin"]
+                            st.session_state.email = email
+                            
+                            # Get user details
+                            user_details = st.session_state.db.get_user_details(result["user_id"])
+                            st.session_state.api_key = user_details["api_key"]
+                            st.session_state.rag_system = RAGSystem(user_details["api_key"])
+                            
+                            # Initialize admin view state if admin
+                            if result["is_admin"]:
+                                st.session_state.admin_view = False  # Start with chat view
                                 
-                                # Get user's API key and initialize RAG system
-                                api_key = st.session_state.db.get_user_api_key(result)
-                                st.session_state.api_key = api_key
-                                st.session_state.rag_system = RAGSystem(api_key)
-                                
-                                # Start with a new chat
-                                start_new_chat()
-                                st.rerun()
-                            else:
-                                st.error(result)
+                            # Start with a new chat
+                            start_new_chat()
+                            st.rerun()
                         else:
-                            st.warning("Please enter both username and password")
+                            st.error(result)
+                    else:
+                        st.warning("Please enter both email and password")
             
             with tab2:
                 with st.form("register_form"):
@@ -497,11 +625,16 @@ def main():
     
     # Main content
     if st.session_state.get("authenticated", False):
-        if "current_conversation_id" not in st.session_state:
-            start_new_chat()
-        
-        # Display chat interface
-        display_chat_interface()
+        # Check if we should show admin view for admin users
+        if st.session_state.get("is_admin", False) and st.session_state.get("admin_view", False):
+            display_admin_page()
+        else:
+            # Regular chat interface
+            if "current_conversation_id" not in st.session_state:
+                start_new_chat()
+            
+            # Display chat interface
+            display_chat_interface()
     else:
         display_auth_page()
 
