@@ -13,28 +13,46 @@ from rag_system import RAGSystem
 from chunking import parse_markdown, chunk_content
 from embedding import generate_and_store_embeddings
 
+import re
+
 def initialize_pinecone(api_key, environment, index_name, dimension=768):
     try:
         # Validate the index name using a regular expression
         if not re.match(r'^[a-z0-9\-]+$', index_name):
             st.error("Invalid index name. It must consist of lowercase alphanumeric characters or hyphens (-).")
             return None
-        pc = Pinecone(api_key)
-        if index_name not in pc.list_indexes():
+        
+        # Initialize Pinecone client
+        pc = Pinecone(api_key=api_key)
+        
+        # Check if the index exists
+        if index_name in pc.list_indexes():
+            st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
+        else:
+            # Create the index if it doesn't exist
             pc.create_index(
                 name=index_name,
-                dimension=dimension,
+                dimension=dimension,  # Adjust based on your embedding model
                 metric='cosine',
                 spec=ServerlessSpec(cloud='aws', region=environment)
             )
             st.success(f"Pinecone index '{index_name}' created successfully.")
-        else:
-            st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
         
-        
+        # Return the Pinecone index object
         return pc.Index(index_name)
+    
+    except pc.core.client.exceptions.ApiException as e:
+        if e.status == 409:  # Index already exists
+            st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
+            return pinecone.Index(index_name)
+        elif e.status == 400:  # Invalid argument (e.g., invalid index name)
+            st.error("Error: Invalid index name. Ensure it consists of lowercase alphanumeric characters or hyphens (-).")
+        else:
+            st.error(f"Error initializing Pinecone: {str(e)}")
+        return None
+    
     except Exception as e:
-        st.error(f"Error initializing Pinecone: {str(e)}")
+        st.error(f"Unexpected error initializing Pinecone: {str(e)}")
         return None
 # Configuration for Neon database
 def get_db_connection():
