@@ -460,7 +460,8 @@ def display_admin_page():
             try:
                 # Initialize Pinecone
                 index = initialize_pinecone(pinecone_api_key, pinecone_environment, index_name)
-                st.success("Pinecone initialized successfully.")
+                if index:
+                    st.success("Pinecone initialized successfully.")
             except Exception as e:
                 st.error(f"Error initializing Pinecone: {str(e)}")
                 return
@@ -500,15 +501,13 @@ def display_admin_page():
                         pinecone.delete_index(index_name)
                     pinecone.create_index(
                         name=index_name,
-                        dimension=768,
+                        dimension=384,
                         metric='cosine',
                         spec=pinecone.ServerlessSpec(cloud='aws', region=pinecone_environment)
                     )
                     st.success("Pinecone index reset successfully.")
                 except Exception as e:
                     st.error(f"Error resetting Pinecone index: {str(e)}")
-
-
                             
 def display_chat_interface():
     # Create a container for the chat header
