@@ -464,7 +464,7 @@ def display_admin_page():
                         pc.delete_index(index_name)
                     pc.create_index(
                         name=index_name,
-                        dimension=768
+                        dimension=768,
                         metric='cosine',
                         spec=pc.ServerlessSpec(cloud='aws', region=pinecone_environment)
                     )
