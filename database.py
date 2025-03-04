@@ -33,20 +33,44 @@ class Database:
     def init_db(self):
         c = self.conn.cursor()
         
-        # Create users table with API key field and is_admin flag
-        c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            api_key TEXT NOT NULL,
-            is_admin BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_login TIMESTAMP
-        )
-        ''')
+        # Check if users table exists and if is_admin column exists
+        c.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'users'
+            );
+        """)
+        table_exists = c.fetchone()[0]
         
-        # Create conversations table
+        if table_exists:
+            # Check if is_admin column exists
+            c.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'is_admin'
+                );
+            """)
+            is_admin_exists = c.fetchone()[0]
+            
+            # If is_admin doesn't exist, add it
+            if not is_admin_exists:
+                c.execute("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;")
+                self.conn.commit()
+        else:
+            # Create users table with API key field and is_admin flag
+            c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                api_key TEXT NOT NULL,
+                is_admin BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
+            )
+            ''')
+        
+        # Create conversations table if it doesn't exist
         c.execute('''
         CREATE TABLE IF NOT EXISTS conversations (
             conversation_id TEXT PRIMARY KEY,
@@ -58,7 +82,7 @@ class Database:
         )
         ''')
         
-        # Create messages table
+        # Create messages table if it doesn't exist
         c.execute('''
         CREATE TABLE IF NOT EXISTS messages (
             message_id TEXT PRIMARY KEY,
@@ -67,7 +91,7 @@ class Database:
             is_user BOOLEAN NOT NULL,
             content TEXT NOT NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id),
+            FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
         ''')
@@ -127,6 +151,8 @@ class Database:
             return True, user_id
         except psycopg2.IntegrityError:
             return False, "Email already exists"
+        except psycopg2.Error as e:
+            return False, f"Database error: {str(e)}"
     
     def login_user(self, email, password):
         """Login a user with email and password"""
