@@ -469,24 +469,72 @@ def display_admin_page():
             if not st.session_state.get("is_admin", False):
                 st.error("Only admins can upload files.")
             else:
-                # Read the uploaded file
-                md_text = uploaded_file.read().decode("utf-8")
+                # Create professional progress containers
+                progress_container = st.container()
+                with progress_container:
+                    # Create columns for a more structured layout
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        # Stylish progress bar with custom styling
+                        progress_bar = st.progress(0, text="Preparing file upload...")
+                    
+                    with col2:
+                        # Status icon container
+                        status_icon = st.empty()
                 
-                # Parse and chunk the markdown content
-                parsed_data = parse_markdown(md_text)
-                chunks = chunk_content(parsed_data, max_tokens=500)
+                # Detailed status message container
+                status_message = st.empty()
+                detailed_status = st.empty()
                 
-                st.info(f"File processed into {len(chunks)} chunks successfully.")
+                try:
+                    # Read the uploaded file
+                    status_message.markdown("📂 **File Processing**")
+                    detailed_status.caption("Reading uploaded file...")
+                    progress_bar.progress(10, text="Reading file contents...")
+                    md_text = uploaded_file.read().decode("utf-8")
+                    
+                    # Validate file size and content
+                    if len(md_text.strip()) == 0:
+                        raise ValueError("The uploaded file is empty.")
+                    
+                    # Parse and chunk the markdown content
+                    detailed_status.caption("Parsing markdown structure...")
+                    progress_bar.progress(30, text="Analyzing markdown structure...")
+                    parsed_data = parse_markdown(md_text)
+                    
+                    detailed_status.caption("Generating content chunks...")
+                    progress_bar.progress(50, text="Creating semantic chunks...")
+                    chunks = chunk_content(parsed_data, max_tokens=500)
+                    
+                    # Validate chunks
+                    if not chunks:
+                        raise ValueError("No valid content chunks could be generated.")
+                    
+                    # Generate embeddings and store in Pinecone
+                    if pinecone_api_key and pinecone_environment and index_name:
+                        detailed_status.caption("Preparing semantic embeddings...")
+                        progress_bar.progress(70, text="Generating vector embeddings...")
+                        
+                        # Professional spinner with context
+                        with st.spinner("Transforming content into vector representations..."):
+                            generate_and_store_embeddings(chunks, index)
+                        
+                        # Final success state
+                        status_message.markdown("✅ **Upload Complete**")
+                        detailed_status.caption(f"Successfully processed {len(chunks)} content chunks")
+                        status_icon.success("Upload Successful")
+                        progress_bar.progress(100, text="Knowledge base updated successfully!")
+                    
+                    else:
+                        raise ValueError("Invalid Pinecone configuration")
                 
-                # Generate embeddings and store in Pinecone
-                if pinecone_api_key and pinecone_environment and index_name:
-                    try:
-                        generate_and_store_embeddings(chunks, index)
-                        st.success("Embeddings generated and stored in Pinecone.")
-                    except Exception as e:
-                        st.error(f"Error generating or storing embeddings: {str(e)}")
-                else:
-                    st.error("Please provide valid Pinecone credentials.")
+                except Exception as e:
+                    # Professional error handling
+                    status_message.markdown("❌ **Upload Failed**")
+                    detailed_status.error(f"Error: {str(e)}")
+                    status_icon.error("Upload Error")
+                    progress_bar.progress(0, text="File upload interrupted")
         
         # Reset Pinecone Index Button
         if st.button("Reset Pinecone Index", key="reset_pinecone"):
@@ -501,7 +549,7 @@ def display_admin_page():
                         name=index_name,
                         dimension=768,
                         metric='cosine',
-                        spec=pc.ServerlessSpec(cloud='aws', region=pinecone_environment)
+                        spec=ServerlessSpec(cloud='aws', region=pinecone_environment)
                     )
                     st.success("Pinecone index reset successfully.")
                 except Exception as e:
