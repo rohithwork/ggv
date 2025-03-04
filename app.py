@@ -76,6 +76,38 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
     except Exception as e:
         st.error(f"Unexpected error initializing Pinecone: {str(e)}")
         return None
+
+def select_pinecone_index():
+    """Allow users to select a Pinecone index from available options"""
+    st.subheader("Select Pinecone Index")
+    
+    # Get the user's Pinecone API key from the database
+    pinecone_api_key = st.session_state.db.get_pinecone_api_key(st.session_state.user_id)
+    pc = Pinecone(api_key=pinecone_api_key)
+    
+    # List available indexes
+    index_list = [index.name for index in pc.list_indexes()]
+    
+    if not index_list:
+        st.error("No Pinecone indexes found. Please contact an administrator.")
+        return
+    
+    # Dropdown to select an index
+    selected_index = st.selectbox("Select an Index", index_list)
+    
+    if st.button("Connect to Index", type="primary"):
+        st.session_state.pinecone_index_name = selected_index
+        st.success(f"Connected to Pinecone index: {selected_index}")
+        
+        # Reinitialize RAGSystem with the selected index
+        user_details = st.session_state.db.get_user_details(st.session_state.user_id)
+        st.session_state.rag_system = RAGSystem(
+            api_key=user_details["api_key"],
+            pinecone_api_key=pinecone_api_key,
+            pinecone_environment="us-east-1",
+            index_name=selected_index
+        )
+        st.rerun()
 # Configuration for Neon database
 def get_db_connection():
     # Check for the database URL in session state first (for testing)
@@ -514,41 +546,39 @@ def display_admin_page():
                                 st.rerun()
         except Exception as e:
             st.error(f"Error loading conversations: {str(e)}")
-                            
 def display_chat_interface():
-    # Create a container for the chat header
+    # Allow users to select a Pinecone index if not already selected
+    if "pinecone_index_name" not in st.session_state:
+        select_pinecone_index()
+        return
+    
+    # Rest of the chat interface remains unchanged
     with st.container():
         cols = st.columns([3, 1])
         
         with cols[0]:
-            # Allow user to edit conversation title with a nicer UI
             current_title = st.session_state.get("conversation_title", "New Chat")
             new_title = st.text_input(
                 "💬 Conversation Title", 
                 value=current_title,
-                key=f"title_input_{st.session_state.current_conversation_id}"  # Unique key based on conversation ID
+                key=f"title_input_{st.session_state.current_conversation_id}"
             )
             
-            # Only update if title has changed and is not empty
             if new_title != current_title and new_title.strip():
                 try:
                     st.session_state.db.rename_conversation(st.session_state.current_conversation_id, new_title)
                     st.session_state.conversation_title = new_title
-                    # Update the sidebar without a full rerun
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to update title: {e}")
     
-    # Add a divider for visual separation
     st.markdown("---")
     
     # Chat container with improved styling
     chat_container = st.container()
     
-    # Initialize messages container in session state if not present
     if "messages" not in st.session_state:
         st.session_state.messages = []
-        # Load previous messages into the format expected by st.chat_message
         if "chat_messages" in st.session_state and st.session_state.chat_messages:
             for msg in st.session_state.chat_messages:
                 is_user = msg[1]
@@ -556,80 +586,60 @@ def display_chat_interface():
                 role = "user" if is_user else "assistant"
                 st.session_state.messages.append({"role": role, "content": content})
     
-    # Create a scrollable container for messages
     with chat_container:
-        # Apply custom styling to messages
         if not st.session_state.messages:
             st.info("👋 Welcome! Ask me anything about Golden Gate Ventures.")
         
-        # Display chat messages using Streamlit's chat_message component
         for message in st.session_state.messages:
             with st.chat_message(message["role"], avatar="👤" if message["role"] == "user" else "🤖"):
                 st.markdown(message["content"])
     
-    # Chat input with custom styling
     st.markdown("---")
     prompt = st.chat_input("Type your message...", key="chat_input")
     
     if prompt:
-        # Add user message to chat
         st.session_state.messages.append({"role": "user", "content": prompt})
-    
-        # Display user message immediately
+        
         with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
-    
-        # Save user message to database
+        
         st.session_state.db.add_message(
             st.session_state.current_conversation_id,
             st.session_state.user_id,
             True,  # is_user
             prompt
         )
-    
-        # IMPORTANT: Get ALL messages for this conversation
-        # Get the complete conversation history from the database
+        
         all_messages = st.session_state.db.get_conversation_messages(st.session_state.current_conversation_id)
         st.session_state.chat_messages = all_messages
-        st.session_state.chat_history = all_messages  # Use the full history
+        st.session_state.chat_history = all_messages
         
-        # Format the chat history correctly for the RAG system
         chat_history = [(msg[0], msg[1], msg[2], msg[3]) for msg in st.session_state.chat_history]
         
-        # Show typing indicator
         with st.chat_message("assistant", avatar="🤖"):
-            # Add a typing indicator
             typing_placeholder = st.empty()
             typing_placeholder.markdown("*Thinking...*")
             
-            # Get response from RAG system
             stream, sources = st.session_state.rag_system.generate_response_stream(prompt, chat_history)
             
-            # Replace typing indicator with actual response
             response_placeholder = typing_placeholder.empty()
             full_response = ""
             
-            # Stream the response
             for event in stream:
                 if hasattr(event, "type") and event.type == "content-delta":
                     delta_text = event.delta.message.content.text
                     full_response += delta_text
-                    # Update the response in real-time
                     response_placeholder.markdown(full_response + "▌")
-                    time.sleep(0.01)  # Small delay for smoother streaming
+                    time.sleep(0.01)
                 
-                # Handle end of stream
                 if hasattr(event, "type") and event.type == "message-end":
-                    # Show final response without cursor
                     response_placeholder.markdown(full_response)
                     
-                    # Show sources if available
                     if sources:
                         with st.expander("Sources"):
                             for i, source in enumerate(sources):
                                 st.markdown(f"**Source {i+1}**: {source}")
             
-            # Save assistant response to database and session state
             st.session_state.db.add_message(
                 st.session_state.current_conversation_id,
                 st.session_state.user_id,
@@ -638,11 +648,6 @@ def display_chat_interface():
             )
             st.session_state.messages.append({"role": "assistant", "content": full_response})
         
-        # Update the UI messages
-        # We're not limiting what's shown to the user, show the full conversation
-        if "chat_messages" not in st.session_state:
-            st.session_state.chat_messages = []
-            
         st.session_state.chat_messages.append((str(uuid.uuid4()), True, prompt, datetime.now()))
         st.session_state.chat_messages.append((str(uuid.uuid4()), False, full_response, datetime.now()))
 
