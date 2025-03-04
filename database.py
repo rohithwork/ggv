@@ -28,18 +28,19 @@ class Database:
         )
         
         self.init_db()
+        self.init_admin_users()
     
     def init_db(self):
         c = self.conn.cursor()
         
-        # Create users table with API key field
+        # Create users table with API key field and is_admin flag
         c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
             api_key TEXT NOT NULL,
+            is_admin BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP
         )
@@ -73,6 +74,38 @@ class Database:
         
         self.conn.commit()
     
+    def init_admin_users(self):
+        """Initialize default admin users if they don't exist"""
+        admin_users = [
+            {
+                "email": "jeff@goldengate.vc",
+                "password": "admin123",  # You should use a more secure password in production
+                "api_key": "uWLYCAHh1pWqCjNgMZwKsSINWbEwjKELQRk21H6Y",
+                "is_admin": True
+            },
+            {
+                "email": "jeevananthamrohith2004@gmail.com",
+                "password": "admin123",  # You should use a more secure password in production
+                "api_key": "jA1KJPrqC4CI68GoivqmKRsWIxro7lF9NpRSZ8oL",
+                "is_admin": True
+            }
+        ]
+        
+        for admin in admin_users:
+            # Check if admin already exists
+            c = self.conn.cursor()
+            c.execute("SELECT user_id FROM users WHERE email = %s", (admin["email"],))
+            if not c.fetchone():
+                # Create the admin user
+                user_id = str(uuid.uuid4())
+                password_hash = self.hash_password(admin["password"])
+                
+                c.execute(
+                    "INSERT INTO users (user_id, email, password_hash, api_key, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (user_id, admin["email"], password_hash, admin["api_key"], admin["is_admin"], datetime.now())
+                )
+                self.conn.commit()
+    
     def close(self):
         self.conn.close()
     
@@ -80,31 +113,46 @@ class Database:
     def hash_password(self, password):
         return hashlib.sha256(password.encode()).hexdigest()
     
-    def register_user(self, username, password, email, api_key):
+    def register_user(self, email, password, api_key, is_admin=False):
+        """Register a new user (only for admin users)"""
         try:
             user_id = str(uuid.uuid4())
             password_hash = self.hash_password(password)
             c = self.conn.cursor()
             c.execute(
-                "INSERT INTO users (user_id, username, password_hash, email, api_key, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                (user_id, username, password_hash, email, api_key, datetime.now())
+                "INSERT INTO users (user_id, email, password_hash, api_key, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (user_id, email, password_hash, api_key, is_admin, datetime.now())
             )
             self.conn.commit()
             return True, user_id
         except psycopg2.IntegrityError:
-            return False, "Username or email already exists"
+            return False, "Email already exists"
     
-    def login_user(self, username, password):
+    def login_user(self, email, password):
+        """Login a user with email and password"""
         c = self.conn.cursor()
-        c.execute("SELECT user_id, password_hash FROM users WHERE username = %s", (username,))
+        c.execute("SELECT user_id, password_hash, is_admin FROM users WHERE email = %s", (email,))
         result = c.fetchone()
         
         if result and result[1] == self.hash_password(password):
             # Update last login time
             c.execute("UPDATE users SET last_login = %s WHERE user_id = %s", (datetime.now(), result[0]))
             self.conn.commit()
-            return True, result[0]
-        return False, "Invalid username or password"
+            return True, {"user_id": result[0], "is_admin": result[2]}
+        return False, "Invalid email or password"
+    
+    def get_user_details(self, user_id):
+        """Get user details including email and admin status"""
+        c = self.conn.cursor()
+        c.execute("SELECT email, is_admin, api_key FROM users WHERE user_id = %s", (user_id,))
+        result = c.fetchone()
+        if result:
+            return {
+                "email": result[0],
+                "is_admin": result[1],
+                "api_key": result[2]
+            }
+        return None
     
     def get_user_api_key(self, user_id):
         c = self.conn.cursor()
@@ -113,6 +161,12 @@ class Database:
         if result:
             return result[0]
         return None
+    
+    def get_all_users(self):
+        """Get all users (for admin view)"""
+        c = self.conn.cursor()
+        c.execute("SELECT user_id, email, is_admin, created_at, last_login FROM users ORDER BY created_at DESC")
+        return c.fetchall()
     
     # Conversation management functions
     def create_conversation(self, user_id, title):
@@ -125,12 +179,27 @@ class Database:
         self.conn.commit()
         return conversation_id
     
-    def get_user_conversations(self, user_id):
+    def get_user_conversations(self, user_id, is_admin=False):
+        """Get conversations for a user or all conversations if admin"""
         c = self.conn.cursor()
-        c.execute(
-            "SELECT conversation_id, title, created_at FROM conversations WHERE user_id = %s ORDER BY updated_at DESC",
-            (user_id,)
-        )
+        
+        if is_admin:
+            # For admin users, return all conversations with user email
+            c.execute(
+                """
+                SELECT c.conversation_id, c.title, c.created_at, u.email 
+                FROM conversations c
+                JOIN users u ON c.user_id = u.user_id
+                ORDER BY c.updated_at DESC
+                """
+            )
+        else:
+            # For regular users, return only their conversations
+            c.execute(
+                "SELECT conversation_id, title, created_at FROM conversations WHERE user_id = %s ORDER BY updated_at DESC",
+                (user_id,)
+            )
+        
         return c.fetchall()
     
     def get_conversation_messages(self, conversation_id):
@@ -171,3 +240,20 @@ class Database:
         # Then delete the conversation
         c.execute("DELETE FROM conversations WHERE conversation_id = %s", (conversation_id,))
         self.conn.commit()
+    
+    def can_access_conversation(self, user_id, conversation_id):
+        """Check if a user can access a specific conversation (user owns it or is admin)"""
+        c = self.conn.cursor()
+        
+        # First check if user is admin
+        c.execute("SELECT is_admin FROM users WHERE user_id = %s", (user_id,))
+        user_result = c.fetchone()
+        if user_result and user_result[0]:  # User is admin
+            return True
+            
+        # If not admin, check if user owns the conversation
+        c.execute(
+            "SELECT 1 FROM conversations WHERE conversation_id = %s AND user_id = %s",
+            (conversation_id, user_id)
+        )
+        return c.fetchone() is not None
