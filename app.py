@@ -246,81 +246,90 @@ def display_admin_page():
             new_email = st.text_input("Email")
             new_password = st.text_input("Password", type="password")
             api_key = st.text_input("Cohere API Key", 
-                                   help="Enter Cohere API key to be used by this user")
+                                  help="Enter Cohere API key to be used by this user")
             is_admin = st.checkbox("Admin privileges")
             
             submitted = st.form_submit_button("Add User", type="primary")
             
             if submitted:
                 if new_email and new_password and api_key:
-                    success, result = st.session_state.db.register_user(new_email, new_password, api_key, is_admin)
-                    if success:
-                        st.success(f"Successfully registered user: {new_email}")
-                    else:
-                        st.error(result)
+                    try:
+                        success, result = st.session_state.db.register_user(new_email, new_password, api_key, is_admin)
+                        if success:
+                            st.success(f"Successfully registered user: {new_email}")
+                        else:
+                            st.error(result)
+                    except Exception as e:
+                        st.error(f"Error registering user: {str(e)}")
                 else:
                     st.warning("Please fill all fields")
         
         # Display all users
         st.subheader("Existing Users")
-        users = st.session_state.db.get_all_users()
-        
-        if not users:
-            st.info("No users found.")
-        else:
-            # Create a DataFrame for better display
-            user_data = []
-            for user in users:
-                user_id, email, is_admin, created_at, last_login = user
-                user_data.append({
-                    "Email": email,
-                    "Admin": "✅" if is_admin else "❌",
-                    "Created": created_at.strftime("%Y-%m-%d %H:%M") if created_at else "N/A",
-                    "Last Login": last_login.strftime("%Y-%m-%d %H:%M") if last_login else "Never"
-                })
+        try:
+            users = st.session_state.db.get_all_users()
             
-            import pandas as pd
-            df = pd.DataFrame(user_data)
-            st.dataframe(df)
+            if not users:
+                st.info("No users found.")
+            else:
+                # Create a DataFrame for better display
+                user_data = []
+                for user in users:
+                    user_id, email, is_admin, created_at, last_login = user
+                    user_data.append({
+                        "Email": email,
+                        "Admin": "✅" if is_admin else "❌",
+                        "Created": created_at.strftime("%Y-%m-%d %H:%M") if created_at else "N/A",
+                        "Last Login": last_login.strftime("%Y-%m-%d %H:%M") if last_login else "Never"
+                    })
+                
+                import pandas as pd
+                df = pd.DataFrame(user_data)
+                st.dataframe(df)
+        except Exception as e:
+            st.error(f"Error loading users: {str(e)}")
     
     with admin_tabs[1]:  # All Conversations Tab
         st.subheader("All User Conversations")
         
         # Get all conversations (admin has access to all)
-        conversations = st.session_state.db.get_user_conversations(st.session_state.user_id, is_admin=True)
-        
-        if not conversations:
-            st.info("No conversations found.")
-        else:
-            # Display conversations in a table
-            for conv in conversations:
-                conv_id, title, created_at, user_email = conv
-                
-                with st.container():
-                    cols = st.columns([3, 1, 1])
+        try:
+            conversations = st.session_state.db.get_user_conversations(st.session_state.user_id, is_admin=True)
+            
+            if not conversations:
+                st.info("No conversations found.")
+            else:
+                # Display conversations in a table
+                for conv in conversations:
+                    conv_id, title, created_at, user_email = conv
                     
-                    with cols[0]:
-                        button_label = f"{title} ({user_email})"
-                        if len(button_label) > 40:
-                            button_label = button_label[:37] + "..."
+                    with st.container():
+                        cols = st.columns([3, 1, 1])
                         
-                        if st.button(button_label, key=f"admin_conv_{conv_id}", use_container_width=True):
-                            st.session_state.current_conversation_id = conv_id
-                            st.session_state.conversation_title = title
-                            st.session_state.viewing_as_admin = True
-                            load_conversation_messages()
-                            # Redirect to chat interface
-                            st.session_state.admin_view = False
-                            st.rerun()
-                    
-                    with cols[1]:
-                        # Format date
-                        st.text(created_at.strftime("%Y-%m-%d"))
-                    
-                    with cols[2]:
-                        if st.button("🗑️", key=f"admin_del_{conv_id}", help="Delete conversation"):
-                            st.session_state.db.delete_conversation(conv_id)
-                            st.rerun()
+                        with cols[0]:
+                            button_label = f"{title} ({user_email})"
+                            if len(button_label) > 40:
+                                button_label = button_label[:37] + "..."
+                            
+                            if st.button(button_label, key=f"admin_conv_{conv_id}", use_container_width=True):
+                                st.session_state.current_conversation_id = conv_id
+                                st.session_state.conversation_title = title
+                                st.session_state.viewing_as_admin = True
+                                load_conversation_messages()
+                                # Redirect to chat interface
+                                st.session_state.admin_view = False
+                                st.rerun()
+                        
+                        with cols[1]:
+                            # Format date
+                            st.text(created_at.strftime("%Y-%m-%d"))
+                        
+                        with cols[2]:
+                            if st.button("🗑️", key=f"admin_del_{conv_id}", help="Delete conversation"):
+                                st.session_state.db.delete_conversation(conv_id)
+                                st.rerun()
+        except Exception as e:
+            st.error(f"Error loading conversations: {str(e)}")
                             
 def display_chat_interface():
     # Create a container for the chat header
@@ -577,7 +586,7 @@ def custom_css():
     </style>
     """, unsafe_allow_html=True)
 
-# Main Streamlit App
+# You may also need to update init_db in main() function
 def main():
     st.set_page_config(
         page_title="Golden Gate Ventures Assistant",
@@ -591,11 +600,15 @@ def main():
     
     # Initialize database connection
     if "db" not in st.session_state:
-        st.session_state.db = get_db_connection()
-        
-        # If no database connection is available yet, show only the database configuration UI
-        if st.session_state.db is None:
-            st.warning("Please configure your Neon database connection to continue")
+        try:
+            st.session_state.db = get_db_connection()
+            
+            # If no database connection is available yet, show only the database configuration UI
+            if st.session_state.db is None:
+                st.warning("Please configure your Neon database connection to continue")
+                return
+        except Exception as e:
+            st.error(f"Database connection error: {str(e)}")
             return
     
     # Create sidebar
