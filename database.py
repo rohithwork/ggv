@@ -33,7 +33,7 @@ class Database:
     def init_db(self):
         c = self.conn.cursor()
         
-        # Check if users table exists and if is_admin column exists
+        # Check if users table exists and if pinecone_api_key column exists
         c.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables 
@@ -43,27 +43,28 @@ class Database:
         table_exists = c.fetchone()[0]
         
         if table_exists:
-            # Check if is_admin column exists
+            # Check if pinecone_api_key column exists
             c.execute("""
                 SELECT EXISTS (
                     SELECT FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'is_admin'
+                    WHERE table_name = 'users' AND column_name = 'pinecone_api_key'
                 );
             """)
-            is_admin_exists = c.fetchone()[0]
+            pinecone_api_key_exists = c.fetchone()[0]
             
-            # If is_admin doesn't exist, add it
-            if not is_admin_exists:
-                c.execute("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;")
+            # If pinecone_api_key doesn't exist, add it
+            if not pinecone_api_key_exists:
+                c.execute("ALTER TABLE users ADD COLUMN pinecone_api_key TEXT;")
                 self.conn.commit()
         else:
-            # Create users table with API key field and is_admin flag
+            # Create users table with API key field, is_admin flag, and pinecone_api_key
             c.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 api_key TEXT NOT NULL,
+                pinecone_api_key TEXT,
                 is_admin BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP
@@ -105,12 +106,14 @@ class Database:
                 "email": "jeff@goldengate.vc",
                 "password": "admin123",  # You should use a more secure password in production
                 "api_key": "uWLYCAHh1pWqCjNgMZwKsSINWbEwjKELQRk21H6Y",
+                "pinecone_api_key": "pcsk_5H4bHn_3Lq4uNrqGNNmqVSnGxj2pxNRwUU5whjHGZgCRBgUkUZPhpMdU18RQkLGj5vBnEz",  # Default Pinecone API key for admin
                 "is_admin": True
             },
             {
                 "email": "jeevananthamrohith2004@gmail.com",
                 "password": "admin123",  # You should use a more secure password in production
                 "api_key": "jA1KJPrqC4CI68GoivqmKRsWIxro7lF9NpRSZ8oL",
+                "pinecone_api_key": "pcsk_5H4bHn_3Lq4uNrqGNNmqVSnGxj2pxNRwUU5whjHGZgCRBgUkUZPhpMdU18RQkLGj5vBnEz",  # Default Pinecone API key for admin
                 "is_admin": True
             }
         ]
@@ -125,8 +128,8 @@ class Database:
                 password_hash = self.hash_password(admin["password"])
                 
                 c.execute(
-                    "INSERT INTO users (user_id, email, password_hash, api_key, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (user_id, admin["email"], password_hash, admin["api_key"], admin["is_admin"], datetime.now())
+                    "INSERT INTO users (user_id, email, password_hash, api_key, pinecone_api_key, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (user_id, admin["email"], password_hash, admin["api_key"], admin["pinecone_api_key"], admin["is_admin"], datetime.now())
                 )
                 self.conn.commit()
     
@@ -137,15 +140,15 @@ class Database:
     def hash_password(self, password):
         return hashlib.sha256(password.encode()).hexdigest()
     
-    def register_user(self, email, password, api_key, is_admin=False):
+    def register_user(self, email, password, api_key, pinecone_api_key, is_admin=False):
         """Register a new user (only for admin users)"""
         try:
             user_id = str(uuid.uuid4())
             password_hash = self.hash_password(password)
             c = self.conn.cursor()
             c.execute(
-                "INSERT INTO users (user_id, email, password_hash, api_key, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                (user_id, email, password_hash, api_key, is_admin, datetime.now())
+                "INSERT INTO users (user_id, email, password_hash, api_key, pinecone_api_key, is_admin, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (user_id, email, password_hash, api_key, pinecone_api_key, is_admin, datetime.now())
             )
             self.conn.commit()
             return True, user_id
@@ -153,6 +156,47 @@ class Database:
             return False, "Email already exists"
         except psycopg2.Error as e:
             return False, f"Database error: {str(e)}"
+    
+    def update_pinecone_api_key(self, user_id, pinecone_api_key, requesting_user_id):
+        """Update Pinecone API key for a user (only admins can do this)"""
+        c = self.conn.cursor()
+        
+        # Check if the requesting user is an admin
+        c.execute("SELECT is_admin FROM users WHERE user_id = %s", (requesting_user_id,))
+        result = c.fetchone()
+        if not result or not result[0]:
+            return False, "Only admins can update Pinecone API keys"
+        
+        # Update the Pinecone API key for the specified user
+        c.execute(
+            "UPDATE users SET pinecone_api_key = %s WHERE user_id = %s",
+            (pinecone_api_key, user_id)
+        )
+        self.conn.commit()
+        return True, "Pinecone API key updated successfully"
+    
+    def get_user_details(self, user_id):
+        """Get user details including email, admin status, and Pinecone API key"""
+        c = self.conn.cursor()
+        c.execute("SELECT email, is_admin, api_key, pinecone_api_key FROM users WHERE user_id = %s", (user_id,))
+        result = c.fetchone()
+        if result:
+            return {
+                "email": result[0],
+                "is_admin": result[1],
+                "api_key": result[2],
+                "pinecone_api_key": result[3]
+            }
+        return None
+    
+    def get_pinecone_api_key(self, user_id):
+        """Get Pinecone API key for a user"""
+        c = self.conn.cursor()
+        c.execute("SELECT pinecone_api_key FROM users WHERE user_id = %s", (user_id,))
+        result = c.fetchone()
+        if result:
+            return result[0]
+        return None
     
     def login_user(self, email, password):
         """Login a user with email and password"""
@@ -166,19 +210,6 @@ class Database:
             self.conn.commit()
             return True, {"user_id": result[0], "is_admin": result[2]}
         return False, "Invalid email or password"
-    
-    def get_user_details(self, user_id):
-        """Get user details including email and admin status"""
-        c = self.conn.cursor()
-        c.execute("SELECT email, is_admin, api_key FROM users WHERE user_id = %s", (user_id,))
-        result = c.fetchone()
-        if result:
-            return {
-                "email": result[0],
-                "is_admin": result[1],
-                "api_key": result[2]
-            }
-        return None
     
     def get_user_api_key(self, user_id):
         c = self.conn.cursor()
