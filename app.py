@@ -439,13 +439,6 @@ def display_admin_page():
         # Pinecone API Key Input
         pinecone_api_key = st.text_input("Enter Pinecone API Key", type="password", key="pinecone_api_key")
         pinecone_environment = st.text_input("Enter Pinecone Environment (e.g., us-east-1)", key="pinecone_env")
-
-        st.markdown("""
-        ### Rules for Knowledge Base Management:
-        1. Only **5 indexes** can be created at max.
-        2. Delete unnecessary indexes to free up resources.
-        3. This is a **trial version** of Pinecone. Use responsibly.
-        """)
         index_name = st.text_input("Enter Pinecone Index Name", key="pinecone_index_name")
         
         if pinecone_api_key and pinecone_environment and index_name:
