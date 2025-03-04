@@ -365,9 +365,8 @@ def display_auth_page():
                                 st.error(result)
             
             st.info("If you don't have an account, please contact an administrator.")
-
 def display_admin_page():
-    """Display the admin dashboard with user management, Pinecone API key management, knowledge base management, and conversations"""
+    """Display the admin dashboard with user management, Pinecone API key management, knowledge base management, and conversations."""
     st.title("🔧 Admin Dashboard")
     
     # Create tabs for different admin functions
@@ -472,18 +471,14 @@ def display_admin_page():
                 # Create professional progress containers
                 progress_container = st.container()
                 with progress_container:
-                    # Create columns for a more structured layout
                     col1, col2 = st.columns([3, 1])
                     
                     with col1:
-                        # Stylish progress bar with custom styling
                         progress_bar = st.progress(0, text="Preparing file upload...")
                     
                     with col2:
-                        # Status icon container
                         status_icon = st.empty()
                 
-                # Detailed status message container
                 status_message = st.empty()
                 detailed_status = st.empty()
                 
@@ -516,9 +511,15 @@ def display_admin_page():
                         detailed_status.caption("Preparing semantic embeddings...")
                         progress_bar.progress(70, text="Generating vector embeddings...")
                         
+                        # Define a progress callback function
+                        def progress_callback(current_batch, total_batches, batch_size):
+                            progress = current_batch / total_batches
+                            progress_bar.progress(progress, text=f"Batch {current_batch}/{total_batches} ({batch_size} vectors)")
+                            detailed_status.caption(f"Processing batch {current_batch}/{total_batches}")
+                        
                         # Professional spinner with context
                         with st.spinner("Transforming content into vector representations..."):
-                            generate_and_store_embeddings(chunks, index)
+                            generate_and_store_embeddings(chunks, index, progress_callback=progress_callback)
                         
                         # Final success state
                         status_message.markdown("✅ **Upload Complete**")
