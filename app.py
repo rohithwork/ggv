@@ -13,21 +13,28 @@ from chunking import parse_markdown, chunk_content
 from embedding import generate_and_store_embeddings
 
 def initialize_pinecone(api_key, environment, index_name, dimension=768):
-    pc = Pinecone(api_key)
-    if index_name not in pc.list_indexes():
-        pc.create_index(
-            name=index_name,
-            dimension=dimension,
-            metric='cosine',
-            spec=ServerlessSpec(cloud='aws', region=environment)
-        )
-        st.success(f"Pinecone index '{index_name}' created successfully.")
-    else:
-        st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
+    try:
+        # Validate the index name using a regular expression
+        if not re.match(r'^[a-z0-9\-]+$', index_name):
+            st.error("Invalid index name. It must consist of lowercase alphanumeric characters or hyphens (-).")
+            return None
+        pc = Pinecone(api_key)
+        if index_name not in pc.list_indexes():
+            pc.create_index(
+                name=index_name,
+                dimension=dimension,
+                metric='cosine',
+                spec=ServerlessSpec(cloud='aws', region=environment)
+            )
+            st.success(f"Pinecone index '{index_name}' created successfully.")
+        else:
+            st.info(f"Pinecone index '{index_name}' already exists. Connecting to it...")
         
         
-    return pc.Index(index_name)
-
+        return pc.Index(index_name)
+    except Exception as e:
+        st.error(f"Error initializing Pinecone: {str(e)}")
+        return None
 # Configuration for Neon database
 def get_db_connection():
     # Check for the database URL in session state first (for testing)
