@@ -55,7 +55,7 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
                     name=index_name,
                     dimension=dimension,  # Adjust based on your embedding model
                     metric='cosine',
-                    spec=pc.ServerlessSpec(cloud='aws', region=environment)
+                    spec=ServerlessSpec(cloud='aws', region=environment)
                 )
                 st.success(f"Created new Pinecone index '{index_name}'.")
             else:
@@ -66,7 +66,7 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
                 name=index_name,
                 dimension=dimension,  # Adjust based on your embedding model
                 metric='cosine',
-                spec=pc.ServerlessSpec(cloud='aws', region=environment)
+                spec=ServerlessSpec(cloud='aws', region=environment)
             )
             st.success(f"Pinecone index '{index_name}' created successfully.")
         
