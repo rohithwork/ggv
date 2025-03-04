@@ -3,6 +3,8 @@ import time
 import os
 from datetime import datetime
 import uuid
+import pinecone
+from pinecone import ServerlessSpec, Pinecone 
 
 # Import custom modules
 from database import Database
@@ -11,15 +13,15 @@ from chunking import parse_markdown, chunk_content
 from embedding import generate_and_store_embeddings
 
 def initialize_pinecone(api_key, environment, index_name, dimension=768):
-    pinecone.init(api_key=api_key, environment=environment)
-    if index_name not in pinecone.list_indexes():
-        pinecone.create_index(
+    pc = Pinecone(api_key)
+    if index_name not in pc.list_indexes():
+        pc.create_index(
             name=index_name,
             dimension=dimension,
             metric='cosine',
-            spec=pinecone.ServerlessSpec(cloud='aws', region=environment)
+            spec=ServerlessSpec(cloud='aws', region=environment)
         )
-    return pinecone.Index(index_name)
+    return pc.Index(index_name)
 
 # Configuration for Neon database
 def get_db_connection():
