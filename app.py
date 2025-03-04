@@ -366,300 +366,236 @@ def display_auth_page():
             
             st.info("If you don't have an account, please contact an administrator.")
 def display_admin_page():
-    """Display the admin dashboard with comprehensive management tools"""
+    """Display the admin dashboard with user management, Pinecone API key management, knowledge base management, and conversations."""
     st.title("🔧 Admin Dashboard")
     
     # Create tabs for different admin functions
-    admin_tabs = st.tabs([
-        "👥 User Management", 
-        "🔑 API Key Management", 
-        "📚 Knowledge Base", 
-        "💬 Conversation Management"
-    ])
+    admin_tabs = st.tabs(["👥 User Management", "🔑 Pinecone API Key Management", "📚 Knowledge Base Management", "💬 All Conversations"])
     
     # User Management Tab
     with admin_tabs[0]:
         st.subheader("Manage Users")
         
-        # User Registration Section
-        with st.form("add_user_form", clear_on_submit=True):
+        # Form to add new users
+        with st.form("add_user_form"):
             st.subheader("Register New User")
-            col1, col2 = st.columns(2)
+            new_email = st.text_input("Email")
+            is_admin = st.checkbox("Admin privileges")
+            api_key = st.text_input("Cohere API Key", help="Enter Cohere API key to be used by this user")
+            pinecone_api_key = st.text_input("Pinecone API Key", help="Enter Pinecone API key to be used by this user")
             
-            with col1:
-                new_email = st.text_input("Email Address", placeholder="user@company.com")
-                api_key = st.text_input("Cohere API Key", type="password")
+            submitted = st.form_submit_button("Add User", type="primary")
             
-            with col2:
-                pinecone_api_key = st.text_input("Pinecone API Key", type="password")
-                is_admin = st.checkbox("Grant Admin Privileges")
-            
-            submit_user = st.form_submit_button("Add User", type="primary")
-            
-            if submit_user:
-                # Validation checks
+            if submitted:
                 if not new_email or not api_key or not pinecone_api_key:
-                    st.warning("All fields are required")
+                    st.warning("Email, Cohere API key, and Pinecone API key are required")
                 else:
-                    try:
-                        success, result = st.session_state.db.register_user(
-                            new_email, 
-                            "no_password_required", 
-                            api_key, 
-                            pinecone_api_key, 
-                            is_admin
-                        )
-                        
-                        if success:
-                            st.success(f"User {new_email} registered successfully")
-                        else:
-                            st.error(result)
-                    except Exception as e:
-                        st.error(f"Registration failed: {str(e)}")
+                    success, result = st.session_state.db.register_user(new_email, "no_password_required", api_key, pinecone_api_key, is_admin)
+                    if success:
+                        st.success(f"Successfully registered user: {new_email}")
+                    else:
+                        st.error(result)
         
-        # Existing Users Section
+        # Display all users
         st.subheader("Existing Users")
         try:
             users = st.session_state.db.get_all_users()
             
-            if users:
-                # Convert users to DataFrame for better display
-                import pandas as pd
+            if not users:
+                st.info("No users found.")
+            else:
                 user_data = []
                 for user in users:
                     user_id, email, is_admin, created_at, last_login = user
                     user_data.append({
-                        "User ID": user_id,
                         "Email": email,
                         "Admin": "✅" if is_admin else "❌",
                         "Created": created_at.strftime("%Y-%m-%d %H:%M") if created_at else "N/A",
                         "Last Login": last_login.strftime("%Y-%m-%d %H:%M") if last_login else "Never"
                     })
                 
+                import pandas as pd
                 df = pd.DataFrame(user_data)
-                st.dataframe(df, use_container_width=True)
-            else:
-                st.info("No users found")
-        
+                st.dataframe(df)
         except Exception as e:
-            st.error(f"Error retrieving users: {str(e)}")
+            st.error(f"Error loading users: {str(e)}")
     
-    # API Key Management Tab
+    # Pinecone API Key Management Tab
     with admin_tabs[1]:
-        st.subheader("Manage API Keys")
+        st.subheader("Manage Pinecone API Keys")
         
-        # Cohere API Key Management
-        st.markdown("#### Cohere API Key")
+        # Select user to update Pinecone API key
         user_emails = [user[1] for user in st.session_state.db.get_all_users()]
         selected_email = st.selectbox("Select User", user_emails)
         
         if selected_email:
             user_id = [user[0] for user in st.session_state.db.get_all_users() if user[1] == selected_email][0]
+            current_pinecone_api_key = st.session_state.db.get_pinecone_api_key(user_id)
             
-            with st.form("update_cohere_key", clear_on_submit=True):
-                new_cohere_key = st.text_input("New Cohere API Key", type="password")
-                submit_cohere_key = st.form_submit_button("Update Cohere Key")
-                
-                if submit_cohere_key:
-                    try:
-                        success, message = st.session_state.db.update_cohere_api_key(
-                            user_id, 
-                            new_cohere_key, 
-                            st.session_state.user_id
-                        )
-                        if success:
-                            st.success(message)
-                        else:
-                            st.error(message)
-                    except Exception as e:
-                        st.error(f"Update failed: {str(e)}")
-        
-        # Pinecone API Key Management
-        st.markdown("---")
-        st.markdown("#### Pinecone API Key")
-        pinecone_selected_email = st.selectbox("Select User for Pinecone", user_emails)
-        
-        if pinecone_selected_email:
-            pinecone_user_id = [user[0] for user in st.session_state.db.get_all_users() if user[1] == pinecone_selected_email][0]
+            st.markdown(f"**Current Pinecone API Key:** `{current_pinecone_api_key}`")
             
-            with st.form("update_pinecone_key", clear_on_submit=True):
-                new_pinecone_key = st.text_input("New Pinecone API Key", type="password")
-                submit_pinecone_key = st.form_submit_button("Update Pinecone Key")
-                
-                if submit_pinecone_key:
-                    try:
-                        success, message = st.session_state.db.update_pinecone_api_key(
-                            pinecone_user_id, 
-                            new_pinecone_key, 
-                            st.session_state.user_id
-                        )
-                        if success:
-                            st.success(message)
-                        else:
-                            st.error(message)
-                    except Exception as e:
-                        st.error(f"Update failed: {str(e)}")
+            new_pinecone_api_key = st.text_input("New Pinecone API Key", type="password")
+            
+            if st.button("Update Pinecone API Key", type="primary"):
+                success, message = st.session_state.db.update_pinecone_api_key(user_id, new_pinecone_api_key, st.session_state.user_id)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
     
     # Knowledge Base Management Tab
     with admin_tabs[2]:
-        st.subheader("Knowledge Base Management")
+        st.subheader("Manage Knowledge Base")
+
+        # Pinecone API Key Input
+        pinecone_api_key = st.text_input("Enter Pinecone API Key", type="password", key="pinecone_api_key")
+        pinecone_environment = st.text_input("Enter Pinecone Environment (e.g., us-east-1)", key="pinecone_env")
+        index_name = st.text_input("Enter Pinecone Index Name", key="pinecone_index_name")
         
-        # Pinecone Configuration
-        st.markdown("#### Pinecone Index Configuration")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            pinecone_api_key = st.text_input("Pinecone API Key", type="password")
-        
-        with col2:
-            pinecone_environment = st.text_input("Environment", placeholder="us-east-1")
-        
-        with col3:
-            index_name = st.text_input("Index Name", placeholder="my-knowledge-base")
+        if pinecone_api_key and pinecone_environment and index_name:
+            try:
+                # Initialize Pinecone
+                index = initialize_pinecone(pinecone_api_key, pinecone_environment, index_name)
+                if index:
+                    st.success("Pinecone initialized successfully.")
+            except Exception as e:
+                st.error(f"Error initializing Pinecone: {str(e)}")
+                return
         
         # File Upload Section
-        st.markdown("#### Upload Knowledge Base")
-        uploaded_file = st.file_uploader("Upload Markdown (.md) File", type=["md"])
-        
+        uploaded_file = st.file_uploader("Upload a Markdown (.md) file", type=["md"])
         if uploaded_file:
-            # Progress tracking containers
-            progress_container = st.container()
-            with progress_container:
-                # Overall progress bar
-                progress_bar = st.progress(0, text="Preparing file upload...")
-                
-                # Batch processing status
-                batch_status = st.empty()
-                batch_details = st.empty()
-            
-            try:
-                # Read and process file
-                md_text = uploaded_file.read().decode("utf-8")
-                
-                if len(md_text.strip()) == 0:
-                    raise ValueError("The uploaded file is empty.")
-                
-                # Parse markdown
-                parsed_data = parse_markdown(md_text)
-                
-                # Chunk content
-                chunks = chunk_content(parsed_data, max_tokens=500)
-                
-                if not chunks:
-                    raise ValueError("No valid content chunks could be generated.")
-                
-                # Pinecone embedding configuration
-                if pinecone_api_key and pinecone_environment and index_name:
-                    # Initialize Pinecone
-                    pc = Pinecone(api_key=pinecone_api_key)
+            if not st.session_state.get("is_admin", False):
+                st.error("Only admins can upload files.")
+            else:
+                # Progress tracking containers
+                progress_container = st.container()
+                with progress_container:
+                    # Overall progress bar
+                    progress_bar = st.progress(0, text="Preparing file upload...")
                     
-                    # Create or use existing index
-                    if index_name not in [index.name for index in pc.list_indexes()]:
-                        pc.create_index(
-                            name=index_name,
-                            dimension=768,  # Adjust based on embedding model
-                            metric='cosine',
-                            spec=ServerlessSpec(cloud='aws', region=pinecone_environment)
-                        )
+                    # Batch processing status
+                    batch_status = st.empty()
+                    batch_details = st.empty()
+                
+                try:
+                    # Read and process file
+                    md_text = uploaded_file.read().decode("utf-8")
                     
-                    index = pc.Index(index_name)
+                    if len(md_text.strip()) == 0:
+                        raise ValueError("The uploaded file is empty.")
                     
-                    # Detailed progress callback
-                    def progress_callback(current_batch, total_batches, batch_size, batch_progress):
-                        # Calculate overall progress percentage
-                        progress_percentage = int((batch_progress['processed_chunks'] / batch_progress['total_chunks']) * 100)
+                    # Parse markdown
+                    parsed_data = parse_markdown(md_text)
+                    
+                    # Chunk content
+                    chunks = chunk_content(parsed_data, max_tokens=500)
+                    
+                    if not chunks:
+                        raise ValueError("No valid content chunks could be generated.")
+                    
+                    # Pinecone embedding configuration
+                    if pinecone_api_key and pinecone_environment and index_name:
+                        # Detailed progress callback
+                        def progress_callback(current_batch, total_batches, batch_size, batch_progress):
+                            # Calculate overall progress percentage
+                            progress_percentage = int((batch_progress['processed_chunks'] / batch_progress['total_chunks']) * 100)
+                            
+                            # Update progress bar
+                            progress_bar.progress(
+                                progress_percentage, 
+                                text=f"Processing Embeddings: {batch_progress['processed_chunks']}/{batch_progress['total_chunks']} chunks"
+                            )
+                            
+                            # Update batch status
+                            batch_status.markdown(f"**Batch {current_batch}/{total_batches}**")
+                            batch_details.caption(
+                                f"Processing batch of {batch_size} chunks. "
+                                f"Total chunks processed: {batch_progress['processed_chunks']}"
+                            )
                         
-                        # Update progress bar
-                        progress_bar.progress(
-                            progress_percentage, 
-                            text=f"Processing Embeddings: {batch_progress['processed_chunks']}/{batch_progress['total_chunks']} chunks"
-                        )
+                        # Spinner with embedding generation
+                        with st.spinner("Generating semantic embeddings..."):
+                            embedding_stats = generate_and_store_embeddings(
+                                chunks, 
+                                index, 
+                                progress_callback=progress_callback
+                            )
                         
-                        # Update batch status
-                        batch_status.markdown(f"**Batch {current_batch}/{total_batches}**")
-                        batch_details.caption(
-                            f"Processing batch of {batch_size} chunks. "
-                            f"Total chunks processed: {batch_progress['processed_chunks']}"
+                        # Final success message
+                        st.success(
+                            f"Upload complete! "
+                            f"Processed {embedding_stats['total_chunks']} chunks "
+                            f"in {embedding_stats['total_batches']} batches."
                         )
                     
-                    # Spinner with embedding generation
-                    with st.spinner("Generating semantic embeddings..."):
-                        embedding_stats = generate_and_store_embeddings(
-                            chunks, 
-                            index, 
-                            progress_callback=progress_callback
-                        )
-                    
-                    # Final success message
-                    st.success(
-                        f"Upload complete! "
-                        f"Processed {embedding_stats['total_chunks']} chunks "
-                        f"in {embedding_stats['total_batches']} batches."
-                    )
+                    else:
+                        raise ValueError("Invalid Pinecone configuration")
                 
-                else:
-                    raise ValueError("Invalid Pinecone configuration")
-            
-            except Exception as e:
-                st.error(f"Upload failed: {str(e)}")
+                except Exception as e:
+                    st.error(f"Upload failed: {str(e)}")
         
-        # Reset Index Option
-        st.markdown("#### Reset Pinecone Index")
-        reset_col1, reset_col2 = st.columns([3, 1])
-        
-        with reset_col1:
-            st.warning("Resetting the index will delete all existing vectors")
-        
-        with reset_col2:
-            if st.button("Reset Index", type="primary"):
+        # Reset Pinecone Index Button
+        if st.button("Reset Pinecone Index", key="reset_pinecone"):
+            if not st.session_state.get("is_admin", False):
+                st.error("Only admins can reset the Pinecone index.")
+            else:
                 try:
                     pc = Pinecone(api_key=pinecone_api_key)
                     if index_name in [index.name for index in pc.list_indexes()]:
                         pc.delete_index(index_name)
-                        st.success(f"Index {index_name} deleted successfully")
+                    pc.create_index(
+                        name=index_name,
+                        dimension=768,
+                        metric='cosine',
+                        spec=ServerlessSpec(cloud='aws', region=pinecone_environment)
+                    )
+                    st.success("Pinecone index reset successfully.")
                 except Exception as e:
-                    st.error(f"Reset failed: {str(e)}")
+                    st.error(f"Error resetting Pinecone index: {str(e)}")
     
-    # Conversation Management Tab
+    # All Conversations Tab
     with admin_tabs[3]:
-        st.subheader("All Conversations")
+        st.subheader("All User Conversations")
         
+        # Get all conversations (admin has access to all)
         try:
-            # Fetch all conversations
-            conversations = st.session_state.db.get_user_conversations(
-                st.session_state.user_id, 
-                is_admin=True
-            )
+            conversations = st.session_state.db.get_user_conversations(st.session_state.user_id, is_admin=True)
             
-            if conversations:
-                # Convert to DataFrame for better display
-                import pandas as pd
-                conv_data = []
+            if not conversations:
+                st.info("No conversations found.")
+            else:
+                # Display conversations in a table
                 for conv in conversations:
                     conv_id, title, created_at, user_email = conv
-                    conv_data.append({
-                        "Conversation ID": conv_id,
-                        "Title": title,
-                        "User": user_email,
-                        "Created": created_at.strftime("%Y-%m-%d %H:%M")
-                    })
-                
-                df = pd.DataFrame(conv_data)
-                st.dataframe(df, use_container_width=True)
-                
-                # Bulk delete option
-                if st.checkbox("Select Conversations to Delete"):
-                    selected_convs = st.multiselect("Choose Conversations", df["Conversation ID"])
                     
-                    if st.button("Delete Selected Conversations"):
-                        for conv_id in selected_convs:
-                            st.session_state.db.delete_conversation(conv_id)
-                        st.success(f"Deleted {len(selected_convs)} conversations")
-            else:
-                st.info("No conversations found")
-        
+                    with st.container():
+                        cols = st.columns([3, 1, 1])
+                        
+                        with cols[0]:
+                            button_label = f"{title} ({user_email})"
+                            if len(button_label) > 40:
+                                button_label = button_label[:37] + "..."
+                            
+                            if st.button(button_label, key=f"admin_conv_{conv_id}", use_container_width=True):
+                                st.session_state.current_conversation_id = conv_id
+                                st.session_state.conversation_title = title
+                                st.session_state.viewing_as_admin = True
+                                load_conversation_messages()
+                                # Redirect to chat interface
+                                st.session_state.admin_view = False
+                                st.rerun()
+                        
+                        with cols[1]:
+                            # Format date
+                            st.text(created_at.strftime("%Y-%m-%d"))
+                        
+                        with cols[2]:
+                            if st.button("🗑️", key=f"admin_del_{conv_id}", help="Delete conversation"):
+                                st.session_state.db.delete_conversation(conv_id)
+                                st.rerun()
         except Exception as e:
-            st.error(f"Error retrieving conversations: {str(e)}")
+            st.error(f"Error loading conversations: {str(e)}")
 def display_chat_interface():
     """Display the chat interface"""
     # Check if an index has been selected
