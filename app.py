@@ -433,9 +433,14 @@ def display_admin_page():
                     st.error(message)
     
     # Knowledge Base Management Tab
-    with admin_tabs[2]:
+    with admin_tabs[
         st.subheader("Manage Knowledge Base")
-        
+        st.markdown("""
+        ### Rules for Knowledge Base Management:
+        1. Only **5 indexes** can be created at max.
+        2. Delete unnecessary indexes to free up resources.
+        3. This is a **trial version** of Pinecone. Use responsibly.
+        """)
         # Pinecone API Key Input
         pinecone_api_key = st.text_input("Enter Pinecone API Key", type="password", key="pinecone_api_key")
         pinecone_environment = st.text_input("Enter Pinecone Environment (e.g., us-east-1)", key="pinecone_env")
@@ -540,16 +545,12 @@ def display_admin_page():
 # Updated display_chat_interface() function
 def display_chat_interface():
     """Display the chat interface"""
-    # Ensure the user has selected a Pinecone index
+    # Check if a Pinecone index is selected
     if "pinecone_index_name" not in st.session_state:
+        st.warning("Please select a Pinecone index to continue chatting.")
         select_pinecone_index()
         return
-    
-    # Ensure the RAGSystem object is initialized
-    if "rag_system" not in st.session_state:
-        st.error("RAGSystem is not initialized. Please reconnect to a Pinecone index.")
-        return
-    
+
     # Rest of the chat interface remains unchanged
     with st.container():
         cols = st.columns([3, 1])
