@@ -87,9 +87,8 @@ def select_pinecone_index():
         
         # Add a disconnect button
         if st.button("Disconnect from Index", type="secondary"):
-            # Clear only Pinecone-related session state
+            # Clear Pinecone-related session state
             del st.session_state.pinecone_index_name
-            # Keep RAG system if other components are still valid
             if "rag_system" in st.session_state:
                 del st.session_state.rag_system
             st.success("Disconnected from Pinecone index.")
