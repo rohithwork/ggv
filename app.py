@@ -604,7 +604,6 @@ def display_chat_interface():
     """Display the chat interface"""
     # Check if an index has been selected
     if "pinecone_index_name" not in st.session_state:
-        st.warning("Please select a Pinecone index to proceed.")
         select_pinecone_index()
         return
     
