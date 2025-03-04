@@ -7,6 +7,19 @@ import uuid
 # Import custom modules
 from database import Database
 from rag_system import RAGSystem
+from chunking import parse_markdown, chunk_content
+from embedding import generate_and_store_embeddings
+
+def initialize_pinecone(api_key, environment, index_name, dimension=768:
+    pinecone.init(api_key=api_key, environment=environment)
+    if index_name not in pinecone.list_indexes():
+        pinecone.create_index(
+            name=index_name,
+            dimension=dimension,
+            metric='cosine',
+            spec=pinecone.ServerlessSpec(cloud='aws', region=environment)
+        )
+    return pinecone.Index(index_name)
 
 # Configuration for Neon database
 def get_db_connection():
@@ -265,11 +278,10 @@ def display_auth_page():
 
 # Modified display_admin_page() function for user registration
 def display_admin_page():
-    """Display the admin dashboard with user management and all conversations"""
     st.title("🔧 Admin Dashboard")
     
     # Create tabs for different admin functions
-    admin_tabs = st.tabs(["👥 User Management", "💬 All Conversations"])
+    admin_tabs = st.tabs(["👥 User Management", "💬 All Conversations", "📚 Knowledge Base Management"])
     
     with admin_tabs[0]:  # User Management Tab
         st.subheader("Manage Users")
@@ -375,6 +387,68 @@ def display_admin_page():
                                 st.rerun()
         except Exception as e:
             st.error(f"Error loading conversations: {str(e)}")
+
+    with admin_tabs[2]:
+        st.subheader("Manage Knowledge Base")
+        
+        # Pinecone API Key Input
+        pinecone_api_key = st.text_input("Enter Pinecone API Key", type="password", key="pinecone_api_key")
+        pinecone_environment = st.text_input("Enter Pinecone Environment (e.g., us-east-1)", key="pinecone_env")
+        index_name = st.text_input("Enter Pinecone Index Name", key="pinecone_index_name")
+        
+        if pinecone_api_key and pinecone_environment and index_name:
+            try:
+                # Initialize Pinecone
+                index = initialize_pinecone(pinecone_api_key, pinecone_environment, index_name)
+                st.success("Pinecone initialized successfully.")
+            except Exception as e:
+                st.error(f"Error initializing Pinecone: {str(e)}")
+                return
+        
+        # File Upload Section
+        uploaded_file = st.file_uploader("Upload a Markdown (.md) file", type=["md"])
+        if uploaded_file:
+            if not st.session_state.get("is_admin", False):
+                st.error("Only admins can upload files.")
+            else:
+                # Read the uploaded file
+                md_text = uploaded_file.read().decode("utf-8")
+                
+                # Parse and chunk the markdown content
+                parsed_data = parse_markdown(md_text)
+                chunks = chunk_content(parsed_data, max_tokens=500)
+                
+                st.info(f"File processed into {len(chunks)} chunks successfully.")
+                
+                # Generate embeddings and store in Pinecone
+                if pinecone_api_key and pinecone_environment and index_name:
+                    try:
+                        generate_and_store_embeddings(chunks, index)
+                        st.success("Embeddings generated and stored in Pinecone.")
+                    except Exception as e:
+                        st.error(f"Error generating or storing embeddings: {str(e)}")
+                else:
+                    st.error("Please provide valid Pinecone credentials.")
+        
+        # Reset Pinecone Index Button
+        if st.button("Reset Pinecone Index", key="reset_pinecone"):
+            if not st.session_state.get("is_admin", False):
+                st.error("Only admins can reset the Pinecone index.")
+            else:
+                try:
+                    if index_name in pinecone.list_indexes():
+                        pinecone.delete_index(index_name)
+                    pinecone.create_index(
+                        name=index_name,
+                        dimension=768,
+                        metric='cosine',
+                        spec=pinecone.ServerlessSpec(cloud='aws', region=pinecone_environment)
+                    )
+                    st.success("Pinecone index reset successfully.")
+                except Exception as e:
+                    st.error(f"Error resetting Pinecone index: {str(e)}")
+
+
                             
 def display_chat_interface():
     # Create a container for the chat header
