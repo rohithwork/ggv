@@ -6,10 +6,21 @@ import cohere
 from sentence_transformers import SentenceTransformer
 
 class RAGSystem:
-    def __init__(self, api_key):
-        # Use the user-provided API key
+    def __init__(self, api_key, pinecone_api_key, pinecone_environment, index_name):
+        # Initialize Cohere client
         self.api_key = api_key
         self.co = cohere.ClientV2(api_key=self.api_key)
+        
+        # Initialize Pinecone client
+        self.pc = Pinecone(api_key=pinecone_api_key)
+        self.index_name = index_name
+        self.pinecone_environment = pinecone_environment
+        
+        # Connect to the specified Pinecone index
+        try:
+            self.index = self.pc.Index(self.index_name)
+        except Exception as e:
+            raise ValueError(f"Failed to connect to Pinecone index '{index_name}': {str(e)}")
         
         # Initialize embedding model
         self.embedding_model = SentenceTransformer("all-mpnet-base-v2")
@@ -17,77 +28,58 @@ class RAGSystem:
         # Initialize conversation memory
         self.conversation_summary = ""
         
-        try:
-            # Load pre-built FAISS index and metadata
-            with open("faiss_metadata.pkl", "rb") as f:
-                self.metadata = pickle.load(f)
-            
-            with open("chunks.json", "r", encoding="utf-8") as f:
-                chunks = json.load(f)
-                self.texts = [chunk["text"] for chunk in chunks]
-            
-            # Load FAISS index
-            self.index = faiss.read_index("faiss_index.index")
-        except Exception as e:
-            print(f"Error loading data: {e}")
-            # Initialize with empty data as fallback
-            self.metadata = []
-            self.texts = []
-            self.index = None
-    
     def retrieve_documents(self, query, chat_history=None):
         """
-        Retrieve relevant documents based on the query and conversation context
+        Retrieve relevant documents from Pinecone based on the query and conversation context
         """
-        if self.index is None:
-            return []
-        
         # Create a hybrid query that incorporates conversation context
         hybrid_query = self._create_hybrid_query(query, chat_history)
-        
+    
         # Encode the hybrid query
-        query_embedding = self.embedding_model.encode(hybrid_query, convert_to_numpy=True).astype("float32")
-        
-        if query_embedding.ndim == 1:
-            query_embedding = query_embedding.reshape(1, -1)
-        
-        faiss.normalize_L2(query_embedding)
-        distances, indices = self.index.search(query_embedding, 8)  # Retrieve more candidates
-        
+        query_embedding = self.embedding_model.encode(hybrid_query).astype("float32").tolist()
+    
+        # Query Pinecone for similar documents
+        results = self.index.query(
+            vector=query_embedding,
+            top_k=8,  # Retrieve top 8 candidates
+            include_metadata=True
+        )
+    
         initial_results = []
-        for idx, score in zip(indices[0], distances[0]):
-            if idx < len(self.texts) and idx < len(self.metadata):
-                initial_results.append({
-                    "text": self.texts[idx],
-                    "metadata": self.metadata[idx],
-                    "initial_score": float(score)
-                })
-        
+        for match in results['matches']:
+            text = match['metadata'].get('text', "")
+            metadata = match['metadata']
+            initial_results.append({
+                "text": text,
+                "metadata": metadata,
+                "initial_score": match['score']
+            })
+    
         candidate_texts = [doc["text"] for doc in initial_results]
         if candidate_texts:
             try:
-                # Use the original query for reranking but with context awareness
+            # Use the original query for reranking but with context awareness
                 context_aware_query = f"{query} (In the context of: {self._extract_key_topics(chat_history)})"
-                
+
                 rerank_response = self.co.rerank(
                     query=context_aware_query,
                     documents=candidate_texts,
                     top_n=min(8, len(candidate_texts)),
                     model="rerank-english-v3.0"
                 )
-                
+
                 reranked_results = []
                 for res in rerank_response.results:
                     doc = initial_results[res.index]
                     doc["rerank_score"] = res.relevance_score
                     reranked_results.append(doc)
-                
+            
                 reranked_results = sorted(reranked_results, key=lambda x: x["rerank_score"], reverse=True)
                 return reranked_results[:5]  # Return top 5 after reranking
             except Exception as e:
                 print(f"Reranking error: {e}")
                 return initial_results[:5]
-        
+    
         return []
     
     def _create_hybrid_query(self, current_query, chat_history=None):
