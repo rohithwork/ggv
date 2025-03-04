@@ -180,7 +180,7 @@ def start_new_chat():
         st.error(f"Failed to start new chat: {e}")
         print(f"Error starting new chat: {e}")
 
-# Replace the current display_auth_page() function with this one
+# Modified display_auth_page() function
 def display_auth_page():
     # Create a nice container for the auth form
     with st.container():
@@ -192,44 +192,78 @@ def display_auth_page():
             st.markdown("*Your internal knowledge base companion*")
             st.markdown("---")
             
-            # Only have login form, no registration
+            # Login form with admin checkbox
             with st.form("login_form"):
                 st.subheader("Login")
                 email = st.text_input("Email", key="login_email")
-                password = st.text_input("Password", type="password", key="login_password")
+                is_admin_login = st.checkbox("I am an admin", key="is_admin_login")
+                
+                # Only show password field if admin is selected
+                password = None
+                if is_admin_login:
+                    password = st.text_input("Password", type="password", key="login_password")
                 
                 submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
                 
                 if submitted:
-                    if email and password:
-                        success, result = st.session_state.db.login_user(email, password)
-                        if success:
-                            st.session_state.authenticated = True
-                            st.session_state.user_id = result["user_id"]
-                            st.session_state.is_admin = result["is_admin"]
-                            st.session_state.email = email
-                            
-                            # Get user details
-                            user_details = st.session_state.db.get_user_details(result["user_id"])
-                            st.session_state.api_key = user_details["api_key"]
-                            st.session_state.rag_system = RAGSystem(user_details["api_key"])
-                            
-                            # Initialize admin view state if admin
-                            if result["is_admin"]:
-                                st.session_state.admin_view = False  # Start with chat view
-                                
-                            # Start with a new chat
-                            start_new_chat()
-                            st.rerun()
-                        else:
-                            st.error(result)
+                    if not email:
+                        st.warning("Please enter your email")
+                    elif is_admin_login and not password:
+                        st.warning("Admin login requires a password")
                     else:
-                        st.warning("Please enter both email and password")
+                        # For non-admin users, use a simplified login without password
+                        if not is_admin_login:
+                            # Check if user exists (no password check for non-admins)
+                            success, result = st.session_state.db.login_user_without_password(email)
+                            if not success:
+                                st.error(result)
+                            elif result.get("is_admin", False):
+                                st.error("This account has admin privileges. Please log in as an admin.")
+                            else:
+                                # Non-admin login successful
+                                st.session_state.authenticated = True
+                                st.session_state.user_id = result["user_id"]
+                                st.session_state.is_admin = False
+                                st.session_state.email = email
+                                
+                                # Get user details
+                                user_details = st.session_state.db.get_user_details(result["user_id"])
+                                st.session_state.api_key = user_details["api_key"]
+                                st.session_state.rag_system = RAGSystem(user_details["api_key"])
+                                
+                                # Start with a new chat
+                                start_new_chat()
+                                st.rerun()
+                        else:
+                            # Admin login with password verification
+                            success, result = st.session_state.db.login_user(email, password)
+                            if success:
+                                if not result.get("is_admin", False):
+                                    st.error("This account does not have admin privileges")
+                                else:
+                                    st.session_state.authenticated = True
+                                    st.session_state.user_id = result["user_id"]
+                                    st.session_state.is_admin = result["is_admin"]
+                                    st.session_state.email = email
+                                    
+                                    # Get user details
+                                    user_details = st.session_state.db.get_user_details(result["user_id"])
+                                    st.session_state.api_key = user_details["api_key"]
+                                    st.session_state.rag_system = RAGSystem(user_details["api_key"])
+                                    
+                                    # Initialize admin view state
+                                    st.session_state.admin_view = False  # Start with chat view
+                                    
+                                    # Start with a new chat
+                                    start_new_chat()
+                                    st.rerun()
+                            else:
+                                st.error(result)
             
             # Information for new users
             st.info("If you don't have an account, please contact an administrator.")
 
-# Update the display_admin_page() function to ensure user registration works correctly
+# Modified display_admin_page() function for user registration
 def display_admin_page():
     """Display the admin dashboard with user management and all conversations"""
     st.title("🔧 Admin Dashboard")
@@ -244,25 +278,35 @@ def display_admin_page():
         with st.form("add_user_form"):
             st.subheader("Register New User")
             new_email = st.text_input("Email")
-            new_password = st.text_input("Password", type="password")
+            is_admin = st.checkbox("Admin privileges")
+            
+            # Only require password for admin users
+            new_password = None
+            if is_admin:
+                new_password = st.text_input("Password", type="password", 
+                                            help="Password required for admin accounts")
+            
             api_key = st.text_input("Cohere API Key", 
                                   help="Enter Cohere API key to be used by this user")
-            is_admin = st.checkbox("Admin privileges")
             
             submitted = st.form_submit_button("Add User", type="primary")
             
             if submitted:
-                if new_email and new_password and api_key:
+                if not new_email or not api_key:
+                    st.warning("Email and API key are required")
+                elif is_admin and not new_password:
+                    st.warning("Password is required for admin accounts")
+                else:
                     try:
-                        success, result = st.session_state.db.register_user(new_email, new_password, api_key, is_admin)
+                        # Use a default password for non-admin users
+                        password_to_use = new_password if is_admin else "no_password_required"
+                        success, result = st.session_state.db.register_user(new_email, password_to_use, api_key, is_admin)
                         if success:
                             st.success(f"Successfully registered user: {new_email}")
                         else:
                             st.error(result)
                     except Exception as e:
                         st.error(f"Error registering user: {str(e)}")
-                else:
-                    st.warning("Please fill all fields")
         
         # Display all users
         st.subheader("Existing Users")
@@ -289,6 +333,7 @@ def display_admin_page():
         except Exception as e:
             st.error(f"Error loading users: {str(e)}")
     
+    # Rest of the function remains unchanged
     with admin_tabs[1]:  # All Conversations Tab
         st.subheader("All User Conversations")
         
