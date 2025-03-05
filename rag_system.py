@@ -6,6 +6,7 @@ import cohere
 from sentence_transformers import SentenceTransformer
 import pinecone
 from pinecone import ServerlessSpec, Pinecone 
+from datetime import datetime
 
 class RAGSystem:
     def __init__(self, api_key, pinecone_api_key, pinecone_environment, index_name):
@@ -60,7 +61,7 @@ class RAGSystem:
         candidate_texts = [doc["text"] for doc in initial_results]
         if candidate_texts:
             try:
-            # Use the original query for reranking but with context awareness
+                # Use the original query for reranking but with context awareness
                 context_aware_query = f"{query} (In the context of: {self._extract_key_topics(chat_history)})"
 
                 rerank_response = self.co.rerank(
@@ -83,6 +84,74 @@ class RAGSystem:
                 return initial_results[:5]
     
         return []
+    
+    def generate_response_stream(self, user_message, chat_history=None):
+        # Retrieve relevant documents with improved context
+        retrieved_docs = self.retrieve_documents(user_message, chat_history)
+        
+        # If no documents found, return a response indicating lack of context
+        if not retrieved_docs:
+            def no_context_generator():
+                yield "I apologize, but I cannot find relevant information to answer this query based on the available context. Could you please rephrase or provide more specific details?"
+            return no_context_generator(), []
+        
+        context = "\n\n".join([doc["text"] for doc in retrieved_docs])
+        
+        # Prepare a response generation prompt that enforces strict context adherence
+        response_generation_prompt = f"""
+## Strict Context-Based Response Guidelines
+1. ONLY use information from the following retrieved context:
+{context}
+
+2. If the query CANNOT be fully answered using ONLY the provided context:
+   - Clearly state what information is missing
+   - Explain that a complete answer requires additional context
+   - Do NOT make up or invent any information
+
+3. Your response must:
+   - Directly address the user's query
+   - Quote or directly reference the source text
+   - Be transparent about the limitations of the available context
+
+## User Query
+{user_message}
+
+## Response Instructions
+Provide a response that is:
+- 100% based on the retrieved context
+- Clear and concise
+- Explicitly sourced from the given documents
+"""
+        
+        try:
+            # Generate response using Cohere's chat API with strict context constraints
+            response = self.co.chat(
+                model="command-r-plus",
+                message=response_generation_prompt,
+                temperature=0.1,  # Very low temperature to reduce creativity
+                max_tokens=3000,
+            )
+            
+            # Create a generator to simulate streaming
+            def response_generator():
+                yield response.text if hasattr(response, 'text') else "Unable to generate a response."
+            
+            # Update conversation memory
+            self._update_conversation_memory(user_message, chat_history)
+            
+            return response_generator(), retrieved_docs
+        
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            
+            # Return an error generator
+            def error_generator():
+                yield f"Error generating response: Unable to process the query. {str(e)}"
+            
+            return error_generator(), []
+
+    # All other methods remain the same as in the original implementation
+    # ... (include all other methods from the original class)
     
     def _create_hybrid_query(self, current_query, chat_history=None):
         """
@@ -121,7 +190,7 @@ class RAGSystem:
             return f"{current_query} {' '.join(recent_queries)}"
         else:
             return current_query
-    
+
     def _extract_key_topics(self, chat_history):
         """
         Extract key topics from the conversation history
