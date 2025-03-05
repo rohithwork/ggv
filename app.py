@@ -132,54 +132,22 @@ def select_pinecone_index():
         # Check if a default index is already set
         current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
         
-        # Add radio button to choose between existing and new index
-        index_action = st.radio("Index Management", 
-            ["Use Existing Index", "Create New Index"], 
-            index=0
-        )
-        
-        if index_action == "Use Existing Index":
-            # If current default exists, show it with option to use
-            if current_default:
-                st.info(f"Current default index: {current_default['index_name']}")
-                
-                # Allow selecting from existing indexes
-                selected_index = st.selectbox("Select Pinecone Index", index_list, 
-                    index=index_list.index(current_default['index_name']) if current_default['index_name'] in index_list else 0
-                )
-                
-                pinecone_environment = st.text_input(
-                    "Pinecone Environment", 
-                    value=current_default.get('environment', 'us-east-1') if current_default else 'us-east-1'
-                )
-            else:
-                # No current default, just select from list
-                selected_index = st.selectbox("Select Pinecone Index", index_list)
-                pinecone_environment = st.text_input("Pinecone Environment", value='us-east-1')
+        # If current default exists, show it with option to use
+        if current_default:
+            st.info(f"Current default index: {current_default['index_name']}")
             
-        else:  # Create New Index
-            # New index creation with originality options
-            new_index_originality = st.selectbox("Choose Index Originality", [
-                "Completely New Index",
-                "Based on Existing Company Knowledge",
-                "Focused on Specific Department",
-                "General Purpose Research Index",
-                "Project-Specific Knowledge Base"
-            ])
-            
-            # Dynamic index name generation based on originality
-            default_index_name = new_index_originality.lower().replace(" ", "-")
-            
-            selected_index = st.text_input(
-                "New Index Name", 
-                value=f"ggv-{default_index_name}-{datetime.now().strftime('%Y%m%d')}"
+            # Allow selecting from existing indexes
+            selected_index = st.selectbox("Select Pinecone Index", index_list, 
+                index=index_list.index(current_default['index_name']) if current_default['index_name'] in index_list else 0
             )
             
-            # Validate index name
-            if not re.match(r'^[a-z0-9\-]+$', selected_index):
-                st.error("Invalid index name. Use lowercase alphanumeric characters and hyphens.")
-                return
-            
+            pinecone_environment = st.text_input(
+                "Pinecone Environment", 
+                value=current_default.get('environment', 'us-east-1') if current_default else 'us-east-1'
+            )
+        else:
+            # No current default, just select from list
+            selected_index = st.selectbox("Select Pinecone Index", index_list)
             pinecone_environment = st.text_input("Pinecone Environment", value='us-east-1')
         
         # Common button for setting default index
@@ -192,16 +160,6 @@ def select_pinecone_index():
                     st.success(message)
                     # Automatically connect admin to the index
                     st.session_state.pinecone_index_name = selected_index
-                    
-                    # Create the index if it doesn't exist
-                    if selected_index not in index_list:
-                        pc.create_index(
-                            name=selected_index,
-                            dimension=768,  # Adjust based on your embedding model
-                            metric='cosine',
-                            spec=ServerlessSpec(cloud='aws', region=pinecone_environment)
-                        )
-                        st.success(f"Created new Pinecone index: {selected_index}")
                     
                     # Reinitialize RAGSystem for admin
                     st.session_state.rag_system = RAGSystem(
