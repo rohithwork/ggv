@@ -1059,3 +1059,6 @@ def main():
             display_chat_interface()
     else:
         display_auth_page()
+
+if __name__ == "__main__":
+    main()
