@@ -412,6 +412,7 @@ def display_auth_page():
                                 st.error(result)
             
             st.info("If you don't have an account, please contact an administrator.")
+            
 def display_admin_page():
     """Display the admin dashboard with user management, Pinecone API key management, knowledge base management, and conversations."""
     st.title("🔧 Admin Dashboard")
@@ -649,6 +650,107 @@ def display_admin_page():
                                 st.rerun()
         except Exception as e:
             st.error(f"Error loading conversations: {str(e)}")
+    
+    # Pinecone Index Selection Tab
+    with admin_tabs[4]:
+        st.subheader("Pinecone Index Management")
+        
+        # First, check if Pinecone API key is available
+        user_details = st.session_state.db.get_user_details(st.session_state.user_id)
+        pinecone_api_key = user_details.get('pinecone_api_key')
+        
+        if not pinecone_api_key:
+            st.error("Pinecone API key not found for your account. Please add an API key first.")
+            return
+        
+        # Initialize Pinecone client
+        try:
+            pc = Pinecone(api_key=pinecone_api_key)
+            
+            # Get list of available indexes
+            index_list = [index.name for index in pc.list_indexes()]
+            
+            if not index_list:
+                st.error("No Pinecone indexes found in your account.")
+                return
+            
+            # Check if a default index is already set
+            current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
+            
+            # Display current default index information
+            if current_default:
+                st.info(f"Current Default Index: {current_default['index_name']}")
+                st.write(f"Environment: {current_default.get('environment', 'us-east-1')}")
+            else:
+                st.warning("No default Pinecone index has been set.")
+            
+            # Select index from existing list
+            selected_index = st.selectbox(
+                "Select Pinecone Index", 
+                index_list, 
+                index=index_list.index(current_default['index_name']) if current_default and current_default['index_name'] in index_list else 0
+            )
+            
+            # Environment selection
+            pinecone_environment = st.text_input(
+                "Pinecone Environment", 
+                value=current_default.get('environment', 'us-east-1') if current_default else 'us-east-1'
+            )
+            
+            # Button to set default index
+            if st.button("Set as Default Index for All Users", type="primary"):
+                try:
+                    # Set default index for all users
+                    success, message = st.session_state.db.set_default_pinecone_index(selected_index, pinecone_environment)
+                    
+                    if success:
+                        st.success(message)
+                        
+                        # Automatically connect admin to the index
+                        st.session_state.pinecone_index_name = selected_index
+                        
+                        # Reinitialize RAGSystem for admin
+                        st.session_state.rag_system = RAGSystem(
+                            api_key=user_details["api_key"],
+                            pinecone_api_key=pinecone_api_key,
+                            pinecone_environment=pinecone_environment,
+                            index_name=selected_index
+                        )
+                        st.rerun()
+                    else:
+                        st.error(message)
+                except Exception as e:
+                    st.error(f"Error setting default index: {str(e)}")
+            
+            # Optional: Index Details Section
+            st.markdown("---")
+            st.subheader("Index Details")
+            
+            # Retrieve and display details of the selected index
+            try:
+                index_instance = pc.Index(selected_index)
+                index_stats = index_instance.describe_index_stats()
+                
+                # Display index statistics
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Vectors", index_stats.get('total_vector_count', 'N/A'))
+                with col2:
+                    st.metric("Dimension", index_stats.get('dimension', 'N/A'))
+                
+                # Namespace details if available
+                namespaces = index_stats.get('namespaces', {})
+                if namespaces:
+                    st.subheader("Namespaces")
+                    for ns, ns_details in namespaces.items():
+                        st.write(f"**{ns}**: {ns_details.get('vector_count', 0)} vectors")
+            
+            except Exception as e:
+                st.error(f"Could not retrieve index details: {str(e)}")
+        
+        except Exception as e:
+            st.error(f"Error connecting to Pinecone: {str(e)}")
+
 def display_chat_interface():
     """Display the chat interface"""
     # Check if an index has been selected
