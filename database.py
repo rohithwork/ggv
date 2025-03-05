@@ -347,3 +347,46 @@ class Database:
             return True, {"user_id": result[0], "is_admin": result[2]}
     
         return False, "Invalid password"
+
+    def set_default_pinecone_index(self, index_name, environment):
+        """Set a default Pinecone index for all users"""
+        c = self.conn.cursor()
+    
+        # Create a new column if it doesn't exist
+        c.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='users' AND column_name='default_pinecone_index'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN default_pinecone_index TEXT;
+                    ALTER TABLE users ADD COLUMN default_pinecone_environment TEXT;
+                END IF;
+            END $$;
+        """)
+    
+        # Update all users with the default index
+        c.execute(
+            "UPDATE users SET default_pinecone_index = %s, default_pinecone_environment = %s",
+            (index_name, environment)
+        )
+        self.conn.commit()
+        return True, "Default Pinecone index set for all users"
+
+    def get_default_pinecone_index(self, user_id):
+        """Get the default Pinecone index for a user"""
+        c = self.conn.cursor()
+        c.execute(
+            "SELECT default_pinecone_index, default_pinecone_environment FROM users WHERE user_id = %s", 
+            (user_id,)
+        )
+        result = c.fetchone()
+        if result and result[0]:
+            return {
+                "index_name": result[0],
+                "environment": result[1]
+            }
+        return None
+    
