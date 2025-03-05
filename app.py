@@ -81,35 +81,6 @@ def select_pinecone_index():
     """Allow admins to set a default index for all users with more options"""
     st.subheader("Pinecone Index Selection")
     
-    # Only admins can set the default index
-    if not st.session_state.get("is_admin", False):
-        # For non-admin users, automatically connect to the default index
-        default_index = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
-        
-        if default_index:
-            pinecone_api_key = st.session_state.db.get_pinecone_api_key(st.session_state.user_id)
-            
-            if pinecone_api_key:
-                st.session_state.pinecone_index_name = default_index["index_name"]
-                
-                # Reinitialize RAGSystem with the default index
-                user_details = st.session_state.db.get_user_details(st.session_state.user_id)
-                st.session_state.rag_system = RAGSystem(
-                    api_key=user_details["api_key"],
-                    pinecone_api_key=pinecone_api_key,
-                    pinecone_environment=default_index["environment"],
-                    index_name=default_index["index_name"]
-                )
-                
-                st.success(f"Connected to default Pinecone index: {default_index['index_name']}")
-                st.rerun()
-            else:
-                st.error("Pinecone API key not found.")
-        else:
-            st.error("No default Pinecone index set. Please contact an administrator.")
-        return
-    
-    # Admin index selection logic
     # Get the admin's Pinecone API key from their user details
     user_details = st.session_state.db.get_user_details(st.session_state.user_id)
     pinecone_api_key = user_details.get('pinecone_api_key')
@@ -129,28 +100,52 @@ def select_pinecone_index():
             st.error("No Pinecone indexes found in your account.")
             return
         
-        # Check if a default index is already set
+        # For both admin and non-admin, try to get the default index
         current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
         
-        # If current default exists, show it with option to use
-        if current_default:
-            st.info(f"Current default index: {current_default['index_name']}")
-            
-            # Allow selecting from existing indexes
-            selected_index = st.selectbox("Select Pinecone Index", index_list, 
-                index=index_list.index(current_default['index_name']) if current_default['index_name'] in index_list else 0
-            )
-            
-            pinecone_environment = st.text_input(
-                "Pinecone Environment", 
-                value=current_default.get('environment', 'us-east-1') if current_default else 'us-east-1'
-            )
-        else:
-            # No current default, just select from list
-            selected_index = st.selectbox("Select Pinecone Index", index_list)
-            pinecone_environment = st.text_input("Pinecone Environment", value='us-east-1')
+        # Default to first index if no default is set
+        default_index_name = current_default['index_name'] if current_default else index_list[0]
+        default_environment = current_default.get('environment', 'us-east-1') if current_default else 'us-east-1'
         
-        # Common button for setting default index
+        # If not an admin, attempt to connect to the default index
+        if not st.session_state.get("is_admin", False):
+            # Non-admin users automatically connect to the default index
+            pinecone_api_key = st.session_state.db.get_pinecone_api_key(st.session_state.user_id)
+            
+            if pinecone_api_key:
+                st.session_state.pinecone_index_name = default_index_name
+                
+                # Reinitialize RAGSystem with the default index
+                st.session_state.rag_system = RAGSystem(
+                    api_key=user_details["api_key"],
+                    pinecone_api_key=pinecone_api_key,
+                    pinecone_environment=default_environment,
+                    index_name=default_index_name
+                )
+                
+                st.success(f"Connected to default Pinecone index: {default_index_name}")
+                st.rerun()
+            else:
+                st.error("Pinecone API key not found.")
+            return
+        
+        # Admin-specific UI for index selection
+        st.markdown("### 🌐 Manage Default Pinecone Index")
+        
+        # Dropdown for selecting index
+        selected_index = st.selectbox(
+            "Select Default Pinecone Index", 
+            index_list, 
+            index=index_list.index(default_index_name) if default_index_name in index_list else 0
+        )
+        
+        # Environment input with default value
+        pinecone_environment = st.text_input(
+            "Pinecone Environment", 
+            value=default_environment
+        )
+        
+        # Button to set default index for all users
         if st.button("Set Default Index for All Users", type="primary"):
             try:
                 # Set default index for all users
