@@ -77,6 +77,7 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
         st.error(f"Unexpected error initializing Pinecone: {str(e)}")
         return None
 
+# Modify select_pinecone_index function to use the new approach
 def select_pinecone_index():
     """Allow admins to set a default index for all users with more options"""
     st.subheader("Pinecone Index Selection")
@@ -90,7 +91,8 @@ def select_pinecone_index():
             pinecone_api_key = st.session_state.db.get_pinecone_api_key(st.session_state.user_id)
             
             if pinecone_api_key:
-                st.session_state.pinecone_index_name = default_index["index_name"]
+                # Use default_pinecone_index if available, otherwise use index_name
+                index_name = st.session_state.get('default_pinecone_index', default_index["index_name"])
                 
                 # Reinitialize RAGSystem with the default index
                 user_details = st.session_state.db.get_user_details(st.session_state.user_id)
@@ -98,84 +100,16 @@ def select_pinecone_index():
                     api_key=user_details["api_key"],
                     pinecone_api_key=pinecone_api_key,
                     pinecone_environment=default_index["environment"],
-                    index_name=default_index["index_name"]
+                    index_name=index_name
                 )
                 
-                st.success(f"Connected to default Pinecone index: {default_index['index_name']}")
+                st.success(f"Connected to default Pinecone index: {index_name}")
                 st.rerun()
             else:
                 st.error("Pinecone API key not found.")
         else:
             st.error("No default Pinecone index set. Please contact an administrator.")
         return
-    
-    # Admin index selection logic
-    # Get the admin's Pinecone API key from their user details
-    user_details = st.session_state.db.get_user_details(st.session_state.user_id)
-    pinecone_api_key = user_details.get('pinecone_api_key')
-    
-    if not pinecone_api_key:
-        st.error("Pinecone API key not found for your account.")
-        return
-    
-    # Initialize Pinecone client
-    try:
-        pc = Pinecone(api_key=pinecone_api_key)
-        
-        # Get list of available indexes
-        index_list = [index.name for index in pc.list_indexes()]
-        
-        if not index_list:
-            st.error("No Pinecone indexes found in your account.")
-            return
-        
-        # Check if a default index is already set
-        current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
-        
-        # If current default exists, show it with option to use
-        if current_default:
-            st.info(f"Current default index: {current_default['index_name']}")
-            
-            # Allow selecting from existing indexes
-            selected_index = st.selectbox("Select Pinecone Index", index_list, 
-                index=index_list.index(current_default['index_name']) if current_default['index_name'] in index_list else 0
-            )
-            
-            pinecone_environment = st.text_input(
-                "Pinecone Environment", 
-                value=current_default.get('environment', 'us-east-1') if current_default else 'us-east-1'
-            )
-        else:
-            # No current default, just select from list
-            selected_index = st.selectbox("Select Pinecone Index", index_list)
-            pinecone_environment = st.text_input("Pinecone Environment", value='us-east-1')
-        
-        # Common button for setting default index
-        if st.button("Set Default Index for All Users", type="primary"):
-            try:
-                # Set default index for all users
-                success, message = st.session_state.db.set_default_pinecone_index(selected_index, pinecone_environment)
-                
-                if success:
-                    st.success(message)
-                    # Automatically connect admin to the index
-                    st.session_state.pinecone_index_name = selected_index
-                    
-                    # Reinitialize RAGSystem for admin
-                    st.session_state.rag_system = RAGSystem(
-                        api_key=user_details["api_key"],
-                        pinecone_api_key=pinecone_api_key,
-                        pinecone_environment=pinecone_environment,
-                        index_name=selected_index
-                    )
-                    st.rerun()
-                else:
-                    st.error(message)
-            except Exception as e:
-                st.error(f"Error setting default index: {str(e)}")
-    
-    except Exception as e:
-        st.error(f"Error connecting to Pinecone: {str(e)}")
 
 # Configuration for Neon database
 def get_db_connection():
@@ -706,8 +640,9 @@ def display_admin_page():
                     if success:
                         st.success(message)
                         
-                        # Automatically connect admin to the index
-                        st.session_state.pinecone_index_name = selected_index
+                        # Use a different session state variable to avoid widget instantiation conflict
+                        if 'default_pinecone_index' not in st.session_state:
+                            st.session_state.default_pinecone_index = selected_index
                         
                         # Reinitialize RAGSystem for admin
                         st.session_state.rag_system = RAGSystem(
@@ -750,6 +685,7 @@ def display_admin_page():
         
         except Exception as e:
             st.error(f"Error connecting to Pinecone: {str(e)}")
+
 
 def display_chat_interface():
     """Display the chat interface"""
@@ -1036,8 +972,13 @@ def main():
                     
                     # If an index is available, set it as default and initialize RAG system
                     if selected_index:
+                        # Use a different session state variable to avoid widget instantiation conflict
+                        if 'default_pinecone_index' not in st.session_state:
+                            st.session_state.default_pinecone_index = selected_index
+                        
                         st.session_state.db.set_default_pinecone_index(selected_index, pinecone_environment)
-                        st.session_state.pinecone_index_name = selected_index
+                        
+                        # Initialize RAG system with the index
                         st.session_state.rag_system = RAGSystem(
                             api_key=user_details["api_key"],
                             pinecone_api_key=pinecone_api_key,
