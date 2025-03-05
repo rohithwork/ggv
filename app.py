@@ -978,7 +978,7 @@ def custom_css():
     </style>
     """, unsafe_allow_html=True)
 
-# You may also need to update init_db in main() function
+# Modify the main() function to automatically set default index on first login
 def main():
     st.set_page_config(
         page_title="Golden Gate Ventures Assistant",
@@ -1008,6 +1008,45 @@ def main():
     
     # Main content
     if st.session_state.get("authenticated", False):
+        # For admin users, attempt to set default index automatically
+        if st.session_state.get("is_admin", False):
+            # Try to get the default Pinecone index
+            try:
+                user_details = st.session_state.db.get_user_details(st.session_state.user_id)
+                pinecone_api_key = user_details.get('pinecone_api_key')
+                
+                if pinecone_api_key:
+                    pc = Pinecone(api_key=pinecone_api_key)
+                    index_list = [index.name for index in pc.list_indexes()]
+                    
+                    # Get current default or use first available index
+                    current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
+                    
+                    if current_default and current_default['index_name'] in index_list:
+                        selected_index = current_default['index_name']
+                        pinecone_environment = current_default.get('environment', 'us-east-1')
+                    elif index_list:
+                        # Use the first available index if no default is set
+                        selected_index = index_list[0]
+                        pinecone_environment = 'us-east-1'
+                    else:
+                        # No indexes available
+                        st.error("No Pinecone indexes found in your account.")
+                        selected_index = None
+                    
+                    # If an index is available, set it as default and initialize RAG system
+                    if selected_index:
+                        st.session_state.db.set_default_pinecone_index(selected_index, pinecone_environment)
+                        st.session_state.pinecone_index_name = selected_index
+                        st.session_state.rag_system = RAGSystem(
+                            api_key=user_details["api_key"],
+                            pinecone_api_key=pinecone_api_key,
+                            pinecone_environment=pinecone_environment,
+                            index_name=selected_index
+                        )
+            except Exception as e:
+                st.error(f"Error setting default Pinecone index: {str(e)}")
+        
         # Check if we should show admin view for admin users
         if st.session_state.get("is_admin", False) and st.session_state.get("admin_view", False):
             display_admin_page()
@@ -1020,6 +1059,3 @@ def main():
             display_chat_interface()
     else:
         display_auth_page()
-
-if __name__ == "__main__":
-    main()
