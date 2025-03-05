@@ -140,21 +140,31 @@ def change_default_index():
         # Current default index (if exists)
         current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
         
-        # Select index
-        selected_index = st.selectbox(
-            "Select Pinecone Index", 
-            index_list, 
-            index=index_list.index(current_default['index_name']) if current_default and current_default['index_name'] in index_list else 0
-        )
+        # Dropdown for index selection
+        st.subheader("Set Default Pinecone Index")
         
-        # Select environment
-        pinecone_environment = st.text_input(
-            "Pinecone Environment", 
-            value=current_default.get('environment', 'us-east-1') if current_default else 'us-east-1'
-        )
+        # First column for index selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Dropdown for Pinecone Index
+            selected_index = st.selectbox(
+                "Select Pinecone Index", 
+                options=index_list, 
+                index=index_list.index(current_default['index_name']) if current_default and current_default['index_name'] in index_list else 0,
+                key="default_index_dropdown"
+            )
+        
+        with col2:
+            # Environment input
+            pinecone_environment = st.text_input(
+                "Pinecone Environment", 
+                value=current_default.get('environment', 'us-east-1') if current_default else 'us-east-1',
+                key="default_index_environment"
+            )
         
         # Button to set default index
-        if st.button("Set Default Index for All Users", type="primary"):
+        if st.button("Update Default Index for All Users", type="primary"):
             try:
                 # Set default index for all users
                 success, message = st.session_state.db.set_default_pinecone_index(selected_index, pinecone_environment)
