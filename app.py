@@ -78,62 +78,76 @@ def initialize_pinecone(api_key, environment, index_name, dimension=768):
         return None
 
 def select_pinecone_index():
-    """Allow users to select or disconnect from a Pinecone index"""
-    st.subheader("Pinecone Index Management")
+    """Allow admins to set a default index for all users"""
+    st.subheader("Pinecone Index Selection")
     
-    # Check if an index is already connected
-    if "pinecone_index_name" in st.session_state:
-        st.success(f"Connected to Pinecone index: {st.session_state.pinecone_index_name}")
+    # Only admins can set the default index
+    if not st.session_state.get("is_admin", False):
+        # For non-admin users, automatically connect to the default index
+        default_index = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
         
-        # Add a disconnect button
-        if st.button("Disconnect from Index", type="secondary"):
-            # Clear Pinecone-related session state
-            del st.session_state.pinecone_index_name
-            if "rag_system" in st.session_state:
-                del st.session_state.rag_system
-            st.success("Disconnected from Pinecone index.")
-            st.rerun()
+        if default_index:
+            pinecone_api_key = st.session_state.db.get_pinecone_api_key(st.session_state.user_id)
+            
+            if pinecone_api_key:
+                st.session_state.pinecone_index_name = default_index["index_name"]
+                
+                # Reinitialize RAGSystem with the default index
+                user_details = st.session_state.db.get_user_details(st.session_state.user_id)
+                st.session_state.rag_system = RAGSystem(
+                    api_key=user_details["api_key"],
+                    pinecone_api_key=pinecone_api_key,
+                    pinecone_environment=default_index["environment"],
+                    index_name=default_index["index_name"]
+                )
+                
+                st.success(f"Connected to default Pinecone index: {default_index['index_name']}")
+                st.rerun()
+            else:
+                st.error("Pinecone API key not found.")
+        else:
+            st.error("No default Pinecone index set. Please contact an administrator.")
         return
     
-    # Get the user's Pinecone API key from the database
-    pinecone_api_key = st.session_state.db.get_pinecone_api_key(st.session_state.user_id)
-    if not pinecone_api_key:
-        st.error("Pinecone API key not found for your account. Please contact an administrator.")
-        return
+    # Admin index selection logic
+    pinecone_api_key = st.text_input("Pinecone API Key", type="password")
+    pinecone_environment = st.text_input("Pinecone Environment (e.g., us-east-1)")
+    index_name = st.text_input("Pinecone Index Name")
     
-    # Initialize Pinecone client
-    try:
-        pc = Pinecone(api_key=pinecone_api_key)
-    except Exception as e:
-        st.error(f"Failed to connect to Pinecone: {str(e)}")
-        return
-    
-    # List available indexes
-    index_list = [index.name for index in pc.list_indexes()]
-    
-    if not index_list:
-        st.error("No Pinecone indexes found. Please contact an administrator.")
-        return
-    
-    # Dropdown to select an index
-    selected_index = st.selectbox("Select an Index", index_list)
-    
-    if st.button("Connect to Index", type="primary"):
-        # Persist the Pinecone index name in session state
-        st.session_state.pinecone_index_name = selected_index
-        st.success(f"Connected to Pinecone index: {selected_index}")
-        
-        # Reinitialize RAGSystem with the selected index
-        user_details = st.session_state.db.get_user_details(st.session_state.user_id)
-        st.session_state.rag_system = RAGSystem(
-            api_key=user_details["api_key"],
-            pinecone_api_key=pinecone_api_key,
-            pinecone_environment="us-east-1",  # Replace with your Pinecone environment
-            index_name=selected_index
-        )
-        
-        # Stay on the same page after connecting
-        st.rerun()
+    if st.button("Set Default Index for All Users"):
+        if pinecone_api_key and pinecone_environment and index_name:
+            try:
+                # Initialize Pinecone to verify the index
+                pc = Pinecone(api_key=pinecone_api_key)
+                index_list = [index.name for index in pc.list_indexes()]
+                
+                if index_name not in index_list:
+                    st.error(f"Index '{index_name}' does not exist in your Pinecone account.")
+                    return
+                
+                # Set default index for all users
+                success, message = st.session_state.db.set_default_pinecone_index(index_name, pinecone_environment)
+                
+                if success:
+                    st.success(message)
+                    # Automatically connect admin to the index
+                    st.session_state.pinecone_index_name = index_name
+                    
+                    # Reinitialize RAGSystem for admin
+                    user_details = st.session_state.db.get_user_details(st.session_state.user_id)
+                    st.session_state.rag_system = RAGSystem(
+                        api_key=user_details["api_key"],
+                        pinecone_api_key=pinecone_api_key,
+                        pinecone_environment=pinecone_environment,
+                        index_name=index_name
+                    )
+                    st.rerun()
+                else:
+                    st.error(message)
+            except Exception as e:
+                st.error(f"Error setting default index: {str(e)}")
+        else:
+            st.warning("Please provide all required details.")
 # Configuration for Neon database
 def get_db_connection():
     # Check for the database URL in session state first (for testing)
