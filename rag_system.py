@@ -255,7 +255,7 @@ You are the Chief Investment Analyst AI for Golden Gate Ventures, a premier inve
 
         # Analyze the user's query to determine the appropriate prompt strategy
         query_type = self._analyze_query_type(user_message, chat_history)
-        
+    
         # Add specialized instructions based on query type
         if query_type == "factual":
             system_message = base_system_message + """
@@ -326,8 +326,8 @@ Deliver investment intelligence that is:
 - Professionally presented (with clear structure)
 - Actionable for investment decision-making
 """
-        
-        # Add universal capabilities section that applies to all responses
+    
+    # Add universal capabilities section that applies to all responses
         system_message += """
 ## Universal Response Requirements
 1. Extract relevant information from the context that directly addresses the query
@@ -335,32 +335,45 @@ Deliver investment intelligence that is:
 3. Only use information contained in the provided context material
 4. Begin with a concise executive summary or key takeaway
 5. Maintain awareness of our entire conversation history
+
+## Numeric Presentation Guidelines
+- Always format numeric values for maximum readability
+- Use comma separators for thousands (e.g., 1,234,567)
+- Round decimal values to 2 decimal places when appropriate
+- For very large numbers, use millions/billions notation (e.g., 3.5M, 2.1B)
+- Clearly distinguish between percentages, absolute numbers, and monetary values
+- Use consistent decimal precision across related numeric values
+- When presenting financial data, use appropriate decimal places:
+  * Percentages: 2 decimal places (e.g., 12.45%)
+  * Currency: 2 decimal places (e.g., $1,234.56)
+  * Large numbers: Millions/Billions notation
+- Ensure numeric values are easily readable and comprehensible
 """
 
         # Start with the system message
         messages = [{"role": "system", "content": system_message}]
-        
+    
         # Add conversation memory if we have it
         if self.conversation_summary:
             messages.append({
                 "role": "system", 
                 "content": f"## Conversation Memory\nKey topics and information from previous exchanges:\n\n{self.conversation_summary}"
             })
-        
+    
         # Select most relevant messages from chat history
         selected_messages = self._select_relevant_messages(user_message, chat_history)
-        
+    
         # Add selected messages to provide continuity
         for entry in selected_messages:
             role = "user" if entry[1] else "assistant"
             messages.append({"role": role, "content": entry[2]})
-        
+    
         # Dynamically format the context based on source material types and query
         context_message = self._format_context_for_query(user_message, context, query_type)
-        
+    
         # Add the current question with context
         messages.append({"role": "user", "content": context_message})
-        
+    
         return messages
     
     def _format_context_for_query(self, user_message, context, query_type):
