@@ -110,44 +110,57 @@ def select_pinecone_index():
         return
     
     # Admin index selection logic
-    pinecone_api_key = st.text_input("Pinecone API Key", type="password")
-    pinecone_environment = st.text_input("Pinecone Environment (e.g., us-east-1)")
-    index_name = st.text_input("Pinecone Index Name")
+    # Get the admin's Pinecone API key from the database
+    user_details = st.session_state.db.get_user_details(st.session_state.user_id)
+    pinecone_api_key = user_details.get('pinecone_api_key')
     
-    if st.button("Set Default Index for All Users"):
-        if pinecone_api_key and pinecone_environment and index_name:
-            try:
-                # Initialize Pinecone to verify the index
-                pc = Pinecone(api_key=pinecone_api_key)
-                index_list = [index.name for index in pc.list_indexes()]
+    if not pinecone_api_key:
+        st.error("Pinecone API key not found for your account.")
+        return
+    
+    try:
+        # Initialize Pinecone client with admin's API key
+        pc = Pinecone(api_key=pinecone_api_key)
+        
+        # Get list of indexes
+        indexes = pc.list_indexes()
+        
+        if not indexes:
+            st.error("No Pinecone indexes found in your account.")
+            return
+        
+        # Create a dropdown for index selection
+        index_names = [index.name for index in indexes]
+        selected_index = st.selectbox("Select Default Pinecone Index", index_names)
+        
+        # Environment (using a fixed default or you could add a dropdown if needed)
+        pinecone_environment = "us-east-1"
+        
+        if st.button("Set Default Index for All Users"):
+            # Set default index for all users
+            success, message = st.session_state.db.set_default_pinecone_index(
+                selected_index, 
+                pinecone_environment
+            )
+            
+            if success:
+                st.success(message)
+                # Automatically connect admin to the index
+                st.session_state.pinecone_index_name = selected_index
                 
-                if index_name not in index_list:
-                    st.error(f"Index '{index_name}' does not exist in your Pinecone account.")
-                    return
-                
-                # Set default index for all users
-                success, message = st.session_state.db.set_default_pinecone_index(index_name, pinecone_environment)
-                
-                if success:
-                    st.success(message)
-                    # Automatically connect admin to the index
-                    st.session_state.pinecone_index_name = index_name
-                    
-                    # Reinitialize RAGSystem for admin
-                    user_details = st.session_state.db.get_user_details(st.session_state.user_id)
-                    st.session_state.rag_system = RAGSystem(
-                        api_key=user_details["api_key"],
-                        pinecone_api_key=pinecone_api_key,
-                        pinecone_environment=pinecone_environment,
-                        index_name=index_name
-                    )
-                    st.rerun()
-                else:
-                    st.error(message)
-            except Exception as e:
-                st.error(f"Error setting default index: {str(e)}")
-        else:
-            st.warning("Please provide all required details.")
+                # Reinitialize RAGSystem for admin
+                st.session_state.rag_system = RAGSystem(
+                    api_key=user_details["api_key"],
+                    pinecone_api_key=pinecone_api_key,
+                    pinecone_environment=pinecone_environment,
+                    index_name=selected_index
+                )
+                st.rerun()
+            else:
+                st.error(message)
+    
+    except Exception as e:
+        st.error(f"Error retrieving Pinecone indexes: {str(e)}")
 # Configuration for Neon database
 def get_db_connection():
     # Check for the database URL in session state first (for testing)
