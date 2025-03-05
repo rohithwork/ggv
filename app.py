@@ -417,8 +417,7 @@ def display_admin_page():
         "👥 User Management", 
         "🔑 Pinecone API Key Management", 
         "📚 Knowledge Base Management", 
-        "💬 All Conversations", 
-        "🌐 Pinecone Index Selection"  # New tab
+        "💬 All Conversations",   # New tab
     ])
     # User Management Tab
     with admin_tabs[0]:
