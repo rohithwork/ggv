@@ -529,199 +529,127 @@ def display_admin_page():
                     st.success("Pinecone index reset successfully.")
                 except Exception as e:
                     st.error(f"Error resetting Pinecone index: {str(e)}")
-    
+
     # New Tab: Pinecone Index Management
-    with admin_tabs[3]:
-        st.subheader("Pinecone Index Management")
-        
-        # Get admin's Pinecone API key
-        user_details = st.session_state.db.get_user_details(st.session_state.user_id)
-        pinecone_api_key = user_details.get('pinecone_api_key')
-        
-        if not pinecone_api_key:
-            st.error("Pinecone API key not found for your account.")
-        else:
-            # Initialize Pinecone client
+with admin_tabs[3]:
+    st.subheader("Pinecone Index Management")
+    
+    # Get admin's Pinecone API key
+    user_details = st.session_state.db.get_user_details(st.session_state.user_id)
+    pinecone_api_key = user_details.get('pinecone_api_key')
+    
+    if not pinecone_api_key:
+        st.error("Pinecone API key not found for your account.")
+    else:
+        # Initialize Pinecone client
+        try:
+            pc = Pinecone(api_key=pinecone_api_key)
+            
+            # 1. Index Creation Section
+            st.markdown("### 🔨 Create New Index")
+            with st.form("create_index_form"):
+                new_index_name = st.text_input("New Index Name", help="Use lowercase letters, numbers, or hyphens")
+                dimension = st.selectbox("Vector Dimension", [768, 1024, 1536], index=0)
+                region = st.selectbox("Region", ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"], index=0)
+                
+                create_submitted = st.form_submit_button("Create Index", type="primary")
+                
+                if create_submitted:
+                    try:
+                        if not re.match(r'^[a-z0-9\-]+$', new_index_name):
+                            st.error("Invalid index name. Use only lowercase letters, numbers, or hyphens.")
+                        else:
+                            # Check if index already exists
+                            existing_indexes = [index.name for index in pc.list_indexes()]
+                            if new_index_name in existing_indexes:
+                                st.error(f"Index '{new_index_name}' already exists.")
+                            else:
+                                # Create new index
+                                pc.create_index(
+                                    name=new_index_name,
+                                    dimension=dimension,
+                                    metric='cosine',
+                                    spec=ServerlessSpec(cloud='aws', region=region)
+                                )
+                                st.success(f"Created new Pinecone index '{new_index_name}'.")
+                                st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating index: {str(e)}")
+            
+            # 2. Manage Existing Indexes with Dropdown
+            st.markdown("### 📊 Manage Existing Indexes")
+            
+            # Get list of indexes
             try:
-                pc = Pinecone(api_key=pinecone_api_key)
+                indexes = pc.list_indexes()
+                index_names = [index.name for index in indexes]
                 
-                # 1. Index Creation Section
-                st.markdown("### 🔨 Create New Index")
-                with st.form("create_index_form"):
-                    new_index_name = st.text_input("New Index Name", help="Use lowercase letters, numbers, or hyphens")
-                    dimension = st.selectbox("Vector Dimension", [768, 1024, 1536], index=0)
-                    region = st.selectbox("Region", ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"], index=0)
+                if not index_names:
+                    st.info("No Pinecone indexes found in your account.")
+                else:
+                    # 1. Set Default Index
+                    st.markdown("#### Set Default Index")
+                    selected_default_index = st.selectbox(
+                        "Select an index to set as default:",
+                        index_names,
+                        key="default_index_dropdown"
+                    )
                     
-                    create_submitted = st.form_submit_button("Create Index", type="primary")
-                    
-                    if create_submitted:
-                        try:
-                            if not re.match(r'^[a-z0-9\-]+$', new_index_name):
-                                st.error("Invalid index name. Use only lowercase letters, numbers, or hyphens.")
-                            else:
-                                # Check if index already exists
-                                existing_indexes = [index.name for index in pc.list_indexes()]
-                                if new_index_name in existing_indexes:
-                                    st.error(f"Index '{new_index_name}' already exists.")
-                                else:
-                                    # Create new index
-                                    pc.create_index(
-                                        name=new_index_name,
-                                        dimension=dimension,
-                                        metric='cosine',
-                                        spec=ServerlessSpec(cloud='aws', region=region)
-                                    )
-                                    st.success(f"Created new Pinecone index '{new_index_name}'.")
-                        except Exception as e:
-                            st.error(f"Error creating index: {str(e)}")
-                
-                # 2. Index Management Section
-                st.markdown("### 📊 Manage Existing Indexes")
-                
-                # Get list of indexes
-                try:
-                    indexes = pc.list_indexes()
-                    
-                    if not indexes:
-                        st.info("No Pinecone indexes found in your account.")
-                    else:
-                        # Show indexes in a table
-                        for idx in indexes:
-                            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-                            
-                            with col1:
-                                st.markdown(f"**{idx.name}**")
-                                st.caption(f"Dimension: {idx.dimension}, Metric: {idx.metric}")
-                            
-                            with col2:
-                                # Set as default button
-                                if st.button("Set Default", key=f"default_{idx.name}"):
-                                    try:
-                                        success, message = st.session_state.db.set_default_pinecone_index(idx.name, idx.host.split('.')[2])
-                                        if success:
-                                            st.success(message)
-                                        else:
-                                            st.error(message)
-                                    except Exception as e:
-                                        st.error(f"Error setting default: {str(e)}")
-                            
-                            with col3:
-                                # Fetch stats button
-                                if st.button("View Data", key=f"stats_{idx.name}"):
-                                    try:
-                                        index = pc.Index(idx.name)
-                                        stats = index.describe_index_stats()
-                                        
-                                        st.info(f"Total vectors: {stats.total_vector_count}")
-                                        
-                                        # Show namespaces if any
-                                        if hasattr(stats, 'namespaces') and stats.namespaces:
-                                            st.markdown("#### Namespaces:")
-                                            for ns, ns_stats in stats.namespaces.items():
-                                                st.markdown(f"- **{ns}**: {ns_stats.vector_count} vectors")
-                                        else:
-                                            st.info("No namespace data available.")
-                                    except Exception as e:
-                                        st.error(f"Error fetching stats: {str(e)}")
-                            
-                            with col4:
-                                # Delete index button (with confirmation)
-                                delete_key = f"delete_{idx.name}"
-                                if delete_key not in st.session_state:
-                                    st.session_state[delete_key] = False
-                                
-                                if not st.session_state[delete_key]:
-                                    if st.button("Delete", key=f"del_{idx.name}"):
-                                        st.session_state[delete_key] = True
-                                else:
-                                    if st.button("Confirm Delete", key=f"confirm_{idx.name}", type="primary"):
-                                        try:
-                                            pc.delete_index(idx.name)
-                                            st.success(f"Deleted index '{idx.name}'.")
-                                            st.session_state[delete_key] = False
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Error deleting index: {str(e)}")
-                                    if st.button("Cancel", key=f"cancel_{idx.name}"):
-                                        st.session_state[delete_key] = False
-                                        st.rerun()
-                            
-                            st.markdown("---")
+                    # Get the region for the selected index
+                    selected_index_obj = next((idx for idx in indexes if idx.name == selected_default_index), None)
+                    if selected_index_obj and selected_index_obj.host:
+                        selected_region = selected_index_obj.host.split('.')[2]  # Extract region from host
                         
-                        # 3. Set Current Default Index Display
-                        try:
-                            current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
-                            if current_default:
-                                st.markdown(f"**Current Default Index:** `{current_default['index_name']}` in region `{current_default['environment']}`")
-                            else:
-                                st.info("No default index set.")
-                        except Exception as e:
-                            st.error(f"Error fetching default index: {str(e)}")
-                
-                except Exception as e:
-                    st.error(f"Error listing Pinecone indexes: {str(e)}")
-                
-                # 4. Vector Data Management
-                st.markdown("### 🧹 Manage Vector Data")
-                
-                # Select an index to manage its data
-                try:
-                    index_names = [index.name for index in pc.list_indexes()]
-                    if index_names:
-                        selected_index = st.selectbox("Select Index", index_names)
-                        if selected_index:
-                            index = pc.Index(selected_index)
-                            
-                            # Get index statistics
-                            stats = index.describe_index_stats()
-                            st.markdown(f"**Total vectors:** {stats.total_vector_count}")
-                            
-                            # Display namespaces if any
-                            if hasattr(stats, 'namespaces') and stats.namespaces:
-                                st.markdown("#### Namespaces:")
-                                for ns, ns_stats in stats.namespaces.items():
-                                    st.markdown(f"- **{ns}**: {ns_stats.vector_count} vectors")
-                                
-                                # Option to delete specific namespace
-                                namespace_list = list(stats.namespaces.keys())
-                                if namespace_list:
-                                    selected_namespace = st.selectbox("Select Namespace to Delete", namespace_list)
-                                    
-                                    if st.button(f"Delete Namespace '{selected_namespace}'", key="delete_namespace"):
-                                        confirm = st.checkbox("I understand this will delete all vectors in this namespace")
-                                        
-                                        if confirm and st.button("Confirm Deletion", type="primary", key="confirm_ns_delete"):
-                                            try:
-                                                # Delete all vectors in namespace
-                                                index.delete(delete_all=True, namespace=selected_namespace)
-                                                st.success(f"Deleted all vectors in namespace '{selected_namespace}'")
-                                                st.rerun()
-                                            except Exception as e:
-                                                st.error(f"Error deleting namespace: {str(e)}")
-                            else:
-                                st.info("No namespace data available.")
-                            
-                            # Option to delete all vectors
-                            st.markdown("#### Delete All Data")
-                            if st.button("Delete All Vectors", key="delete_all_vectors"):
-                                confirm = st.checkbox("I understand this will delete ALL vectors in this index")
-                                
-                                if confirm and st.button("Confirm Complete Deletion", type="primary", key="confirm_all_delete"):
-                                    try:
-                                        # Delete all vectors in all namespaces
-                                        index.delete(delete_all=True)
-                                        st.success(f"Deleted all vectors from index '{selected_index}'")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Error deleting all vectors: {str(e)}")
-                    else:
-                        st.info("No indexes available to manage.")
-                
-                except Exception as e:
-                    st.error(f"Error managing vector data: {str(e)}")
+                        if st.button("Set as Default Index", type="primary"):
+                            try:
+                                success, message = st.session_state.db.set_default_pinecone_index(
+                                    selected_default_index, 
+                                    selected_region
+                                )
+                                if success:
+                                    st.success(message)
+                                else:
+                                    st.error(message)
+                            except Exception as e:
+                                st.error(f"Error setting default: {str(e)}")
+                    
+                    # 2. Delete Index
+                    st.markdown("#### Delete Index")
+                    index_to_delete = st.selectbox(
+                        "Select an index to delete:",
+                        index_names,
+                        key="delete_index_dropdown"
+                    )
+                    
+                    delete_button = st.button("Delete Selected Index", type="secondary")
+                    
+                    if delete_button:
+                        # Add confirmation check
+                        confirmation = st.checkbox("I understand this action cannot be undone")
+                        
+                        if confirmation and st.button("Confirm Delete", type="primary"):
+                            try:
+                                pc.delete_index(index_to_delete)
+                                st.success(f"Deleted index '{index_to_delete}'.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error deleting index: {str(e)}")
+                    
+                    # Display current default index
+                    try:
+                        current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
+                        if current_default:
+                            st.info(f"**Current Default Index:** {current_default['index_name']} in region {current_default['environment']}")
+                        else:
+                            st.warning("No default index set yet.")
+                    except Exception as e:
+                        st.error(f"Error fetching default index: {str(e)}")
             
             except Exception as e:
-                st.error(f"Error connecting to Pinecone: {str(e)}")
+                st.error(f"Error listing Pinecone indexes: {str(e)}")
+        
+        except Exception as e:
+            st.error(f"Error connecting to Pinecone: {str(e)}")
     
     # All Conversations Tab
     with admin_tabs[4]:
