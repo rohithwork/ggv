@@ -344,7 +344,7 @@ def display_admin_page():
         "👥 User Management", 
         "🔑 Pinecone API Key Management", 
         "📚 Knowledge Base Management", 
-        "🔍 Pinecone Index Explorer",  # New tab for viewing and deleting data
+        "🌲 Pinecone Index Management",  # New tab for index management
         "💬 All Conversations",
     ])
     
@@ -422,142 +422,56 @@ def display_admin_page():
     # Knowledge Base Management Tab
     with admin_tabs[2]:
         st.subheader("Manage Knowledge Base")
+
+        # Pinecone API Key Input
+        pinecone_api_key = st.text_input("Enter Pinecone API Key", type="password", key="pinecone_api_key")
+        pinecone_environment = st.text_input("Enter Pinecone Environment (e.g., us-east-1)", key="pinecone_env")
+        index_name = st.text_input("Enter Pinecone Index Name", key="pinecone_index_name")
         
-        # Pinecone Index Configuration Section
-        st.markdown("### 📊 Pinecone Index Configuration")
-        
-        # Get the admin's Pinecone API key from their user details
-        user_details = st.session_state.db.get_user_details(st.session_state.user_id)
-        pinecone_api_key = user_details.get('pinecone_api_key')
-        
-        if not pinecone_api_key:
-            st.error("Pinecone API key not found for your account.")
-        else:
-            # Initialize Pinecone client
+        if pinecone_api_key and pinecone_environment and index_name:
             try:
-                pc = Pinecone(api_key=pinecone_api_key)
-                
-                # Get list of available indexes
-                index_list = [index.name for index in pc.list_indexes()]
-                
-                if not index_list:
-                    st.warning("No Pinecone indexes found in your account.")
-                    
-                    # Option to create a new index if none exist
-                    st.markdown("### Create New Index")
-                    new_index_name = st.text_input("New Index Name", key="new_index_name")
-                    new_index_env = st.text_input("Environment (e.g., us-east-1)", value="us-east-1", key="new_index_env")
-                    
-                    if st.button("Create Index", type="primary"):
-                        try:
-                            pc.create_index(
-                                name=new_index_name,
-                                dimension=768,  # Use the dimension for your embedding model
-                                metric='cosine',
-                                spec=ServerlessSpec(cloud='aws', region=new_index_env)
-                            )
-                            st.success(f"Created new Pinecone index '{new_index_name}'.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error creating index: {str(e)}")
-                else:
-                    # Try to get the default index
-                    current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
-                    
-                    # Default to first index if no default is set
-                    default_index_name = current_default['index_name'] if current_default else index_list[0]
-                    default_environment = current_default.get('environment', 'us-east-1') if current_default else 'us-east-1'
-                    
-                    # Dropdown for selecting index
-                    selected_index = st.selectbox(
-                        "Select Default Pinecone Index", 
-                        index_list, 
-                        index=index_list.index(default_index_name) if default_index_name in index_list else 0,
-                        key="kb_index_selector"
-                    )
-                    
-                    # Environment input with default value
-                    pinecone_environment = st.text_input(
-                        "Pinecone Environment", 
-                        value=default_environment,
-                        key="kb_pinecone_env"
-                    )
-                    
-                    # Button to set default index for all users
-                    if st.button("Set As Default Index For All Users", type="primary"):
-                        try:
-                            # Set default index for all users
-                            success, message = st.session_state.db.set_default_pinecone_index(selected_index, pinecone_environment)
-                            
-                            if success:
-                                st.success(message)
-                                # Automatically connect admin to the index
-                                st.session_state.pinecone_index_name = selected_index
-                                
-                                # Reinitialize RAGSystem for admin
-                                st.session_state.rag_system = RAGSystem(
-                                    api_key=user_details["api_key"],
-                                    pinecone_api_key=pinecone_api_key,
-                                    pinecone_environment=pinecone_environment,
-                                    index_name=selected_index
-                                )
-                                st.rerun()
-                            else:
-                                st.error(message)
-                        except Exception as e:
-                            st.error(f"Error setting default index: {str(e)}")
-            
+                # Initialize Pinecone
+                index = initialize_pinecone(pinecone_api_key, pinecone_environment, index_name)
+                if index:
+                    st.success("Pinecone initialized successfully.")
             except Exception as e:
-                st.error(f"Error connecting to Pinecone: {str(e)}")
-        
-        st.markdown("---")
+                st.error(f"Error initializing Pinecone: {str(e)}")
+                return
         
         # File Upload Section
-        st.markdown("### 📤 Upload Knowledge Base Content")
-        
-        if "pinecone_index_name" not in st.session_state:
-            st.warning("Please set a default Pinecone index first.")
-        else:
-            # File Upload Section
-            uploaded_file = st.file_uploader("Upload a Markdown (.md) file", type=["md"])
-            if uploaded_file:
-                if not st.session_state.get("is_admin", False):
-                    st.error("Only admins can upload files.")
-                else:
-                    # Progress tracking containers
-                    progress_container = st.container()
-                    with progress_container:
-                        # Overall progress bar
-                        progress_bar = st.progress(0, text="Preparing file upload...")
-                        
-                        # Batch processing status
-                        batch_status = st.empty()
-                        batch_details = st.empty()
+        uploaded_file = st.file_uploader("Upload a Markdown (.md) file", type=["md"])
+        if uploaded_file:
+            if not st.session_state.get("is_admin", False):
+                st.error("Only admins can upload files.")
+            else:
+                # Progress tracking containers
+                progress_container = st.container()
+                with progress_container:
+                    # Overall progress bar
+                    progress_bar = st.progress(0, text="Preparing file upload...")
                     
-                    try:
-                        # Read and process file
-                        md_text = uploaded_file.read().decode("utf-8")
-                        
-                        if len(md_text.strip()) == 0:
-                            raise ValueError("The uploaded file is empty.")
-                        
-                        # Parse markdown
-                        parsed_data = parse_markdown(md_text)
-                        
-                        # Chunk content
-                        chunks = chunk_content(parsed_data, max_tokens=500)
-                        
-                        if not chunks:
-                            raise ValueError("No valid content chunks could be generated.")
-                        
-                        # Get current index settings
-                        index_name = st.session_state.pinecone_index_name
-                        pinecone_api_key = user_details.get('pinecone_api_key')
-                        
-                        # Initialize Pinecone
-                        pc = Pinecone(api_key=pinecone_api_key)
-                        index = pc.Index(index_name)
-                        
+                    # Batch processing status
+                    batch_status = st.empty()
+                    batch_details = st.empty()
+                
+                try:
+                    # Read and process file
+                    md_text = uploaded_file.read().decode("utf-8")
+                    
+                    if len(md_text.strip()) == 0:
+                        raise ValueError("The uploaded file is empty.")
+                    
+                    # Parse markdown
+                    parsed_data = parse_markdown(md_text)
+                    
+                    # Chunk content
+                    chunks = chunk_content(parsed_data, max_tokens=500)
+                    
+                    if not chunks:
+                        raise ValueError("No valid content chunks could be generated.")
+                    
+                    # Pinecone embedding configuration
+                    if pinecone_api_key and pinecone_environment and index_name:
                         # Detailed progress callback
                         def progress_callback(current_batch, total_batches, batch_size, batch_progress):
                             # Calculate overall progress percentage
@@ -591,184 +505,276 @@ def display_admin_page():
                             f"in {embedding_stats['total_batches']} batches."
                         )
                     
-                    except Exception as e:
-                        st.error(f"Upload failed: {str(e)}")
-    
-    # Pinecone Index Explorer Tab (New)
-    with admin_tabs[3]:
-        st.subheader("🔍 Pinecone Index Explorer")
+                    else:
+                        raise ValueError("Invalid Pinecone configuration")
+                
+                except Exception as e:
+                    st.error(f"Upload failed: {str(e)}")
         
-        # Get the admin's Pinecone API key
+        # Reset Pinecone Index Button
+        if st.button("Reset Pinecone Index", key="reset_pinecone"):
+            if not st.session_state.get("is_admin", False):
+                st.error("Only admins can reset the Pinecone index.")
+            else:
+                try:
+                    pc = Pinecone(api_key=pinecone_api_key)
+                    if index_name in [index.name for index in pc.list_indexes()]:
+                        pc.delete_index(index_name)
+                    pc.create_index(
+                        name=index_name,
+                        dimension=768,
+                        metric='cosine',
+                        spec=ServerlessSpec(cloud='aws', region=pinecone_environment)
+                    )
+                    st.success("Pinecone index reset successfully.")
+                except Exception as e:
+                    st.error(f"Error resetting Pinecone index: {str(e)}")
+    
+    # NEW: Pinecone Index Management Tab
+    with admin_tabs[3]:
+        st.subheader("🌲 Pinecone Index Management")
+        
+        # Get the admin's Pinecone API key from their user details
         user_details = st.session_state.db.get_user_details(st.session_state.user_id)
         pinecone_api_key = user_details.get('pinecone_api_key')
         
         if not pinecone_api_key:
             st.error("Pinecone API key not found for your account.")
         else:
+            # Environment selection with common regions
+            common_regions = ["us-east-1", "us-west-1", "us-west-2", "eu-west-1", "ap-southeast-1"]
+            custom_region = st.checkbox("Use custom region")
+            
+            if custom_region:
+                pinecone_environment = st.text_input("Pinecone Environment", value="us-east-1")
+            else:
+                pinecone_environment = st.selectbox("Pinecone Environment", common_regions)
+            
             try:
                 # Initialize Pinecone client
                 pc = Pinecone(api_key=pinecone_api_key)
                 
-                # Get list of available indexes
-                index_list = [index.name for index in pc.list_indexes()]
+                # Index management section
+                st.markdown("### Manage Pinecone Indexes")
                 
-                if not index_list:
-                    st.warning("No Pinecone indexes found in your account.")
-                else:
-                    # Select an index to explore
-                    explore_index = st.selectbox(
-                        "Select Pinecone Index to Explore", 
-                        index_list,
-                        key="explore_index_selector"
-                    )
-                    
-                    if explore_index:
-                        # Connect to the selected index
-                        index = pc.Index(explore_index)
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    # Create new index form
+                    with st.form("create_index_form"):
+                        st.subheader("Create New Index")
+                        new_index_name = st.text_input("Index Name (lowercase alphanumeric and hyphens only)")
+                        dimension = st.selectbox("Vector Dimension", [384, 768, 1024, 1536], index=1)
                         
-                        # Get index stats
-                        try:
-                            stats = index.describe_index_stats()
-                            
-                            # Display index information
-                            st.markdown(f"### Index: {explore_index}")
-                            
-                            # Basic stats
-                            st.markdown(f"**Total Vectors:** {stats.get('total_vector_count', 'N/A')}")
-                            st.markdown(f"**Dimension:** {stats.get('dimension', 'N/A')}")
-                            
-                            # Display namespaces if available
-                            if 'namespaces' in stats and stats['namespaces']:
-                                st.markdown("### Namespaces")
-                                namespace_data = []
-                                
-                                for ns_name, ns_data in stats['namespaces'].items():
-                                    namespace_data.append({
-                                        "Namespace": ns_name,
-                                        "Vector Count": ns_data.get('vector_count', 0)
-                                    })
-                                
-                                import pandas as pd
-                                ns_df = pd.DataFrame(namespace_data)
-                                st.dataframe(ns_df)
-                            
-                            # Vector sample section
-                            st.markdown("### Vector Sample")
-                            
-                            # Choose namespace if multiple exist
-                            namespace = None
-                            if 'namespaces' in stats and len(stats['namespaces']) > 0:
-                                namespace_options = list(stats['namespaces'].keys())
-                                namespace = st.selectbox("Select Namespace", namespace_options, key="namespace_selector")
-                            
-                            # Fetch sample vectors
-                            sample_size = st.slider("Sample Size", min_value=1, max_value=100, value=10, key="sample_size")
-                            
-                            if st.button("Fetch Sample Vectors", key="fetch_sample"):
+                        create_submitted = st.form_submit_button("Create Index", type="primary")
+                        
+                        if create_submitted:
+                            if not new_index_name:
+                                st.warning("Please enter an index name")
+                            elif not re.match(r'^[a-z0-9\-]+$', new_index_name):
+                                st.error("Invalid index name. It must consist of lowercase alphanumeric characters or hyphens (-).")
+                            else:
                                 try:
-                                    # Use Pinecone fetch to get sample vectors
-                                    query = {
-                                        "top_k": sample_size,
-                                        "namespace": namespace if namespace else None,
-                                        "include_metadata": True
-                                    }
-                                    
-                                    # Get a list of vector IDs by performing a dummy query
-                                    import numpy as np
-                                    # Generate a random vector matching the dimension
-                                    dimension = stats.get('dimension', 768)
-                                    dummy_vector = np.random.randn(dimension).tolist()
-                                    
-                                    results = index.query(
-                                        vector=dummy_vector,
-                                        top_k=sample_size,
-                                        namespace=namespace if namespace else None,
-                                        include_metadata=True
-                                    )
-                                    
-                                    if results['matches']:
-                                        # Extract IDs from query results
-                                        vector_ids = [match['id'] for match in results['matches']]
-                                        
-                                        # Fetch vectors by their IDs
-                                        vectors = index.fetch(ids=vector_ids, namespace=namespace if namespace else None)
-                                        
-                                        if vectors and 'vectors' in vectors:
-                                            # Extract metadata and display
-                                            sample_data = []
-                                            for vector_id, vector_data in vectors['vectors'].items():
-                                                metadata = vector_data.get('metadata', {})
-                                                
-                                                # Extract text content and source if available
-                                                text = metadata.get('text', 'No text available')
-                                                source = metadata.get('source', 'Unknown source')
-                                                
-                                                sample_data.append({
-                                                    "ID": vector_id,
-                                                    "Source": source,
-                                                    "Text": text[:100] + "..." if len(text) > 100 else text
-                                                })
-                                            
-                                            # Display as table
-                                            import pandas as pd
-                                            sample_df = pd.DataFrame(sample_data)
-                                            st.dataframe(sample_df)
-                                            
-                                            # Option to delete selected vectors
-                                            st.markdown("### Delete Vectors")
-                                            
-                                            selected_ids = st.multiselect(
-                                                "Select vectors to delete",
-                                                options=vector_ids,
-                                                key="vector_ids_to_delete"
-                                            )
-                                            
-                                            if selected_ids and st.button("Delete Selected Vectors", key="delete_vectors"):
-                                                try:
-                                                    # Delete selected vectors
-                                                    index.delete(
-                                                        ids=selected_ids,
-                                                        namespace=namespace if namespace else None
-                                                    )
-                                                    st.success(f"Successfully deleted {len(selected_ids)} vectors.")
-                                                except Exception as e:
-                                                    st.error(f"Error deleting vectors: {str(e)}")
-                                        else:
-                                            st.warning("No vectors found in the selected index.")
+                                    # Check if index already exists
+                                    index_list = [index.name for index in pc.list_indexes()]
+                                    if new_index_name in index_list:
+                                        st.error(f"Index '{new_index_name}' already exists.")
                                     else:
-                                        st.warning("No vectors found in the selected index.")
+                                        # Create the new index
+                                        pc.create_index(
+                                            name=new_index_name,
+                                            dimension=dimension,
+                                            metric='cosine',
+                                            spec=ServerlessSpec(cloud='aws', region=pinecone_environment)
+                                        )
+                                        st.success(f"Created new Pinecone index '{new_index_name}'.")
                                 except Exception as e:
-                                    st.error(f"Error fetching sample vectors: {str(e)}")
-                            
-                            # Delete Index section
-                            st.markdown("---")
-                            st.markdown("### Danger Zone")
-                            
-                            with st.expander("Delete Index"):
-                                st.warning("⚠️ This will permanently delete the index and all its data!")
-                                
-                                # Confirmation input
-                                confirm_delete = st.text_input(
-                                    f"Type the index name '{explore_index}' to confirm deletion",
-                                    key="confirm_delete_index"
-                                )
-                                
-                                if st.button("Permanently Delete Index", type="primary", key="delete_index_button"):
-                                    if confirm_delete == explore_index:
-                                        try:
-                                            pc.delete_index(explore_index)
-                                            st.success(f"Successfully deleted index '{explore_index}'.")
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Error deleting index: {str(e)}")
-                                    else:
-                                        st.error("Index name doesn't match. Deletion canceled.")
+                                    st.error(f"Error creating index: {str(e)}")
+                
+                with col2:
+                    # Set default index section
+                    st.subheader("Set Default Index")
+                    
+                    try:
+                        # Get list of available indexes
+                        index_list = [index.name for index in pc.list_indexes()]
                         
-                        except Exception as e:
-                            st.error(f"Error fetching index stats: {str(e)}")
-            
-            except Exception as e:
-                st.error(f"Error connecting to Pinecone: {str(e)}")
+                        if not index_list:
+                            st.info("No Pinecone indexes found in your account.")
+                        else:
+                            # Get current default index
+                            current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
+                            default_index_name = current_default['index_name'] if current_default else index_list[0]
+                            
+                            st.markdown(f"**Current Default:** {default_index_name}")
+                            
+                            # Dropdown for selecting index
+                            selected_index = st.selectbox(
+                                "Select Default Index", 
+                                index_list, 
+                                index=index_list.index(default_index_name) if default_index_name in index_list else 0
+                            )
+                            
+                            if st.button("Set as Default", type="primary"):
+                                success, message = st.session_state.db.set_default_pinecone_index(selected_index, pinecone_environment)
+                                if success:
+                                    st.success(message)
+                                else:
+                                    st.error(message)
+                    except Exception as e:
+                        st.error(f"Error retrieving indexes: {str(e)}")
+                
+                # Display all available indexes with stats
+                st.markdown("### Your Pinecone Indexes")
+                
+                try:
+                    index_list = pc.list_indexes()
+                    
+                    if not index_list:
+                        st.info("No Pinecone indexes found in your account.")
+                    else:
+                        # Create a table to display index information
+                        index_data = []
+                        
+                        for idx in index_list:
+                            # Get the index details
+                            index = pc.Index(idx.name)
+                            try:
+                                stats = index.describe_index_stats()
+                                vector_count = stats.get('total_vector_count', 0)
+                                dimension = stats.get('dimension', 'N/A')
+                            except:
+                                vector_count = "Error"
+                                dimension = "Error"
+                            
+                            index_data.append({
+                                "Index Name": idx.name,
+                                "Vectors": vector_count,
+                                "Dimension": dimension,
+                                "Status": idx.status,
+                                "Environment": pinecone_environment
+                            })
+                        
+                        # Display index data in a table
+                        import pandas as pd
+                        df = pd.DataFrame(index_data)
+                        st.dataframe(df)
+                        
+                        # Index content inspection and deletion section
+                        st.markdown("### Index Content Management")
+                        
+                        selected_index_name = st.selectbox(
+                            "Select Index to Manage", 
+                            [idx.name for idx in index_list]
+                        )
+                        
+                        if selected_index_name:
+                            index = pc.Index(selected_index_name)
+                            
+                            col1, col2 = st.columns([3, 1])
+                            
+                            with col1:
+                                try:
+                                    # Query to see vectors (limited sample)
+                                    st.subheader(f"Sample Data in '{selected_index_name}'")
+                                    
+                                    # Get statistics
+                                    stats = index.describe_index_stats()
+                                    total_vectors = stats.get('total_vector_count', 0)
+                                    st.markdown(f"**Total vectors:** {total_vectors}")
+                                    
+                                    if total_vectors > 0:
+                                        # Fetch a sample of vectors
+                                        sample_size = min(10, total_vectors)
+                                        sample_query = index.query(
+                                            vector=[0.0] * stats.get('dimension', 768),
+                                            top_k=sample_size,
+                                            include_metadata=True
+                                        )
+                                        
+                                        if sample_query.get('matches'):
+                                            st.markdown("#### Sample Vectors:")
+                                            for i, match in enumerate(sample_query['matches']):
+                                                with st.expander(f"Vector {i+1} (ID: {match['id']})"):
+                                                    st.json(match.get('metadata', {}))
+                                        else:
+                                            st.info("No vectors found in the sample query.")
+                                    else:
+                                        st.info("This index is empty.")
+                                        
+                                except Exception as e:
+                                    st.error(f"Error querying index: {str(e)}")
+                            
+                            with col2:
+                                # Data deletion options
+                                st.subheader("Delete Data")
+                                
+                                # Option to delete specific IDs
+                                with st.expander("Delete Specific Vectors"):
+                                    vector_ids = st.text_area("Vector IDs (one per line)")
+                                    
+                                    if st.button("Delete Vectors", key="delete_vectors"):
+                                        if vector_ids:
+                                            try:
+                                                # Parse vector IDs
+                                                ids_to_delete = [id.strip() for id in vector_ids.split('\n') if id.strip()]
+                                                
+                                                if ids_to_delete:
+                                                    index.delete(ids=ids_to_delete)
+                                                    st.success(f"Deleted {len(ids_to_delete)} vectors.")
+                                                else:
+                                                    st.warning("No valid IDs provided.")
+                                            except Exception as e:
+                                                st.error(f"Error deleting vectors: {str(e)}")
+                                
+                                # Option to delete vectors by namespace
+                                with st.expander("Delete by Namespace"):
+                                    namespace = st.text_input("Namespace", value="")
+                                    
+                                    if st.button("Delete Namespace", key="delete_namespace"):
+                                        try:
+                                            if namespace.strip():
+                                                index.delete(namespace=namespace, delete_all=True)
+                                                st.success(f"Deleted all vectors in namespace '{namespace}'.")
+                                            else:
+                                                st.warning("Please enter a namespace.")
+                                        except Exception as e:
+                                            st.error(f"Error deleting namespace: {str(e)}")
+                                
+                                # Option to delete all data
+                                with st.expander("Delete All Data"):
+                                    st.warning("⚠️ This will delete ALL vectors in this index!")
+                                    confirm_text = st.text_input("Type the index name to confirm deletion", key="confirm_delete_all")
+                                    
+                                    if st.button("Delete All Data", key="delete_all_data", type="primary"):
+                                        if confirm_text == selected_index_name:
+                                            try:
+                                                index.delete(delete_all=True)
+                                                st.success(f"Deleted all vectors from index '{selected_index_name}'.")
+                                            except Exception as e:
+                                                st.error(f"Error deleting all data: {str(e)}")
+                                        else:
+                                            st.error("Index name doesn't match. Deletion aborted.")
+                                
+                                # Option to delete the entire index
+                                with st.expander("Delete Index"):
+                                    st.error("⚠️ This will delete the entire index and cannot be undone!")
+                                    confirm_index_deletion = st.text_input("Type the index name to confirm deletion", key="confirm_index_deletion")
+                                    
+                                    if st.button("Delete Index", key="delete_index", type="primary"):
+                                        if confirm_index_deletion == selected_index_name:
+                                            try:
+                                                pc.delete_index(selected_index_name)
+                                                st.success(f"Deleted index '{selected_index_name}'.")
+                                                # Force refresh by rerunning
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Error deleting index: {str(e)}")
+                                        else:
+                                            st.error("Index name doesn't match. Deletion aborted.")
+                    
+                except Exception as e:
+                    st.error(f"Error loading indexes: {str(e)}")
     
     # All Conversations Tab
     with admin_tabs[4]:
