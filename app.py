@@ -531,125 +531,125 @@ def display_admin_page():
                     st.error(f"Error resetting Pinecone index: {str(e)}")
 
     # New Tab: Pinecone Index Management
-with admin_tabs[3]:
-    st.subheader("Pinecone Index Management")
+    with admin_tabs[3]:
+        st.subheader("Pinecone Index Management")
     
-    # Get admin's Pinecone API key
-    user_details = st.session_state.db.get_user_details(st.session_state.user_id)
-    pinecone_api_key = user_details.get('pinecone_api_key')
+        # Get admin's Pinecone API key
+        user_details = st.session_state.db.get_user_details(st.session_state.user_id)
+        pinecone_api_key = user_details.get('pinecone_api_key')
     
-    if not pinecone_api_key:
-        st.error("Pinecone API key not found for your account.")
-    else:
-        # Initialize Pinecone client
-        try:
-            pc = Pinecone(api_key=pinecone_api_key)
-            
-            # 1. Index Creation Section
-            st.markdown("### 🔨 Create New Index")
-            with st.form("create_index_form"):
-                new_index_name = st.text_input("New Index Name", help="Use lowercase letters, numbers, or hyphens")
-                dimension = st.selectbox("Vector Dimension", [768, 1024, 1536], index=0)
-                region = st.selectbox("Region", ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"], index=0)
-                
-                create_submitted = st.form_submit_button("Create Index", type="primary")
-                
-                if create_submitted:
-                    try:
-                        if not re.match(r'^[a-z0-9\-]+$', new_index_name):
-                            st.error("Invalid index name. Use only lowercase letters, numbers, or hyphens.")
-                        else:
-                            # Check if index already exists
-                            existing_indexes = [index.name for index in pc.list_indexes()]
-                            if new_index_name in existing_indexes:
-                                st.error(f"Index '{new_index_name}' already exists.")
-                            else:
-                                # Create new index
-                                pc.create_index(
-                                    name=new_index_name,
-                                    dimension=dimension,
-                                    metric='cosine',
-                                    spec=ServerlessSpec(cloud='aws', region=region)
-                                )
-                                st.success(f"Created new Pinecone index '{new_index_name}'.")
-                                st.rerun()
-                    except Exception as e:
-                        st.error(f"Error creating index: {str(e)}")
-            
-            # 2. Manage Existing Indexes with Dropdown
-            st.markdown("### 📊 Manage Existing Indexes")
-            
-            # Get list of indexes
+        if not pinecone_api_key:
+            st.error("Pinecone API key not found for your account.")
+        else:
+            # Initialize Pinecone client
             try:
-                indexes = pc.list_indexes()
-                index_names = [index.name for index in indexes]
-                
-                if not index_names:
-                    st.info("No Pinecone indexes found in your account.")
-                else:
-                    # 1. Set Default Index
-                    st.markdown("#### Set Default Index")
-                    selected_default_index = st.selectbox(
-                        "Select an index to set as default:",
-                        index_names,
-                        key="default_index_dropdown"
-                    )
-                    
-                    # Get the region for the selected index
-                    selected_index_obj = next((idx for idx in indexes if idx.name == selected_default_index), None)
-                    if selected_index_obj and selected_index_obj.host:
-                        selected_region = selected_index_obj.host.split('.')[2]  # Extract region from host
-                        
-                        if st.button("Set as Default Index", type="primary"):
-                            try:
-                                success, message = st.session_state.db.set_default_pinecone_index(
-                                    selected_default_index, 
-                                    selected_region
-                                )
-                                if success:
-                                    st.success(message)
-                                else:
-                                    st.error(message)
-                            except Exception as e:
-                                st.error(f"Error setting default: {str(e)}")
-                    
-                    # 2. Delete Index
-                    st.markdown("#### Delete Index")
-                    index_to_delete = st.selectbox(
-                        "Select an index to delete:",
-                        index_names,
-                        key="delete_index_dropdown"
-                    )
-                    
-                    delete_button = st.button("Delete Selected Index", type="secondary")
-                    
-                    if delete_button:
-                        # Add confirmation check
-                        confirmation = st.checkbox("I understand this action cannot be undone")
-                        
-                        if confirmation and st.button("Confirm Delete", type="primary"):
-                            try:
-                                pc.delete_index(index_to_delete)
-                                st.success(f"Deleted index '{index_to_delete}'.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error deleting index: {str(e)}")
-                    
-                    # Display current default index
-                    try:
-                        current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
-                        if current_default:
-                            st.info(f"**Current Default Index:** {current_default['index_name']} in region {current_default['environment']}")
-                        else:
-                            st.warning("No default index set yet.")
-                    except Exception as e:
-                        st.error(f"Error fetching default index: {str(e)}")
+                pc = Pinecone(api_key=pinecone_api_key)
             
-            except Exception as e:
-                st.error(f"Error listing Pinecone indexes: {str(e)}")
+                # 1. Index Creation Section
+                st.markdown("### 🔨 Create New Index")
+                with st.form("create_index_form"):
+                    new_index_name = st.text_input("New Index Name", help="Use lowercase letters, numbers, or hyphens")
+                    dimension = st.selectbox("Vector Dimension", [768], index=0)
+                    region = st.selectbox("Region", ["us-east-1"], index=0)
+                
+                    create_submitted = st.form_submit_button("Create Index", type="primary")
+                
+                    if create_submitted:
+                        try:
+                            if not re.match(r'^[a-z0-9\-]+$', new_index_name):
+                                st.error("Invalid index name. Use only lowercase letters, numbers, or hyphens.")
+                            else:
+                                # Check if index already exists
+                                existing_indexes = [index.name for index in pc.list_indexes()]
+                                if new_index_name in existing_indexes:
+                                    st.error(f"Index '{new_index_name}' already exists.")
+                                else:
+                                    # Create new index
+                                    pc.create_index(
+                                        name=new_index_name,
+                                        dimension=dimension,
+                                        metric='cosine',
+                                        spec=ServerlessSpec(cloud='aws', region=region)
+                                    )
+                                    st.success(f"Created new Pinecone index '{new_index_name}'.")
+                                    st.rerun()
+                        except Exception as e:
+                            st.error(f"Error creating index: {str(e)}")
+            
+                # 2. Manage Existing Indexes with Dropdown
+                st.markdown("### 📊 Manage Existing Indexes")
+            
+                # Get list of indexes
+                try:
+                    indexes = pc.list_indexes()
+                    index_names = [index.name for index in indexes]
+                
+                    if not index_names:
+                        st.info("No Pinecone indexes found in your account.")
+                    else:
+                        # 1. Set Default Index
+                        st.markdown("#### Set Default Index")
+                        selected_default_index = st.selectbox(
+                            "Select an index to set as default:",
+                            index_names,
+                            key="default_index_dropdown"
+                        )
+                    
+                        # Get the region for the selected index
+                        selected_index_obj = next((idx for idx in indexes if idx.name == selected_default_index), None)
+                        if selected_index_obj and selected_index_obj.host:
+                            selected_region = selected_index_obj.host.split('.')[2]  # Extract region from host
+                        
+                            if st.button("Set as Default Index", type="primary"):
+                                try:
+                                    success, message = st.session_state.db.set_default_pinecone_index(
+                                        selected_default_index, 
+                                        selected_region
+                                    )
+                                    if success:
+                                        st.success(message)
+                                    else:
+                                        st.error(message)
+                                except Exception as e:
+                                    st.error(f"Error setting default: {str(e)}")
+                    
+                        # 2. Delete Index
+                        st.markdown("#### Delete Index")
+                        index_to_delete = st.selectbox(
+                            "Select an index to delete:",
+                            index_names,
+                            key="delete_index_dropdown"
+                        )
+                    
+                        delete_button = st.button("Delete Selected Index", type="secondary")
+                    
+                        if delete_button:
+                        # Add confirmation check
+                            confirmation = st.checkbox("I understand this action cannot be undone")
+                        
+                            if confirmation and st.button("Confirm Delete", type="primary"):
+                                try:
+                                    pc.delete_index(index_to_delete)
+                                    st.success(f"Deleted index '{index_to_delete}'.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error deleting index: {str(e)}")
+                    
+                        # Display current default index
+                        try:
+                            current_default = st.session_state.db.get_default_pinecone_index(st.session_state.user_id)
+                            if current_default:
+                                st.info(f"**Current Default Index:** {current_default['index_name']} in region {current_default['environment']}")
+                            else:
+                                st.warning("No default index set yet.")
+                        except Exception as e:
+                            st.error(f"Error fetching default index: {str(e)}")
+            
+                except Exception as e:
+                    st.error(f"Error listing Pinecone indexes: {str(e)}")
         
-        except Exception as e:
-            st.error(f"Error connecting to Pinecone: {str(e)}")
+            except Exception as e:
+                st.error(f"Error connecting to Pinecone: {str(e)}")
     
     # All Conversations Tab
     with admin_tabs[4]:
